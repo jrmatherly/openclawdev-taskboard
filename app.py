@@ -1341,6 +1341,28 @@ async def resolve_action_item(item_id: int):
     return {"success": True, "item_id": item_id}
 
 
+@app.post("/api/action-items/{item_id}/unresolve")
+async def unresolve_action_item(item_id: int):
+    """Unresolve an action item (undo accidental resolve)."""
+    with get_db() as conn:
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Action item not found")
+        
+        conn.execute(
+            "UPDATE action_items SET resolved = 0, resolved_at = NULL WHERE id = ?",
+            (item_id,)
+        )
+        conn.commit()
+        
+        task_id = row["task_id"]
+    
+    # Broadcast to all clients
+    await manager.broadcast({"type": "action_item_unresolved", "task_id": task_id, "item_id": item_id})
+    
+    return {"success": True, "item_id": item_id}
+
+
 @app.post("/api/action-items/{item_id}/archive")
 async def archive_action_item(item_id: int):
     """Archive a resolved action item to hide it from main view."""
