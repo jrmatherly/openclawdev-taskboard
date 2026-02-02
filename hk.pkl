@@ -7,17 +7,17 @@ import "package://github.com/jdx/hk/releases/download/v1.35.0/hk@1.35.0#/Builtin
 // Python Linters - explicit commands (not Builtins)
 // ============================================
 local python_linters = new Mapping<String, Step> {
-    // Ruff linting
+    // Ruff linting (quiet to reduce output)
     ["ruff"] {
         glob = "*.py"
-        check = "uv run ruff check {{ files }}"
-        fix = "uv run ruff check --fix {{ files }}"
+        check = "uv run ruff check --quiet {{ files }}"
+        fix = "uv run ruff check --fix --quiet {{ files }}"
     }
-    // Ruff formatting
+    // Ruff formatting (quiet to reduce output)
     ["ruff-format"] {
         glob = "*.py"
-        check = "uv run ruff format --check {{ files }}"
-        fix = "uv run ruff format {{ files }}"
+        check = "uv run ruff format --check --quiet {{ files }}"
+        fix = "uv run ruff format --quiet {{ files }}"
     }
 }
 
