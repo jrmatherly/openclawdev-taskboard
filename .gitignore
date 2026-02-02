@@ -14,6 +14,7 @@ data/
 # PYTHON
 # =============================================================================
 .venv/
+requirements.txt  # Deprecated - using pyproject.toml/uv.lock
 __pycache__/
 *.py[cod]
 *$py.class
