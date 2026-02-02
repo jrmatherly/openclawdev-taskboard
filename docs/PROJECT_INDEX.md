@@ -113,7 +113,8 @@ openclawdev-taskboard/
 ├── OPENCLAW_SETUP.md       # Integration guide
 ├── CHANGELOG.md            # Version history
 ├── LICENSE                 # MIT License
-├── start.ps1               # Windows startup script
+├── scripts/
+│   └── start.ps1           # Windows startup script
 ├── static/
 │   └── index.html          # Frontend SPA (~47K tokens)
 ├── examples/

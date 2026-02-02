@@ -1,7 +1,9 @@
 # DEV Task Board Startup Script
 Write-Host "Starting DEV Task Board..." -ForegroundColor Cyan
 
-Set-Location $PSScriptRoot
+# Navigate to project root (one level up from scripts/)
+$projectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $projectRoot
 
 # Check for dependencies
 $missing = @()
