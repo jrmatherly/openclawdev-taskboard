@@ -7,6 +7,7 @@ A real-time Kanban board designed for **multi-agent AI workflows** with [OpenCla
 ## ✨ Features
 
 ### 🎯 Core Functionality
+
 - **Live Kanban Board** — Real-time updates via WebSocket
 - **Multi-Agent Support** — Assign tasks to different AI agents
 - **Auto-Spawn Sessions** — Agents automatically activate when tasks move to "In Progress"
@@ -14,6 +15,7 @@ A real-time Kanban board designed for **multi-agent AI workflows** with [OpenCla
 - **Session Isolation** — Each agent maintains separate context per task
 
 ### 🤖 AI Agents (Configurable via .env)
+
 | Icon | Agent | Focus |
 |------|-------|-------|
 | 🤖 | Main Agent | Coordinator, command bar chat (name configurable) |
@@ -23,12 +25,14 @@ A real-time Kanban board designed for **multi-agent AI workflows** with [OpenCla
 | 🎨 | UX Manager | User flows, UI consistency |
 
 ### 💬 Communication
+
 - **Command Bar** — Direct chat with your main agent from the header
 - **@Mentions** — Tag agents into any task conversation
 - **Action Items** — Questions, blockers, and completion tracking
 - **File Attachments** — Paste images or attach documents
 
 ### 🔒 Security
+
 - API key authentication for sensitive endpoints
 - Secrets stored in environment variables
 - CORS restricted to localhost
@@ -38,30 +42,35 @@ A real-time Kanban board designed for **multi-agent AI workflows** with [OpenCla
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - [Docker](https://www.docker.com/get-started) & Docker Compose
 - [OpenClaw](https://github.com/openclaw/openclaw) running locally
 
 ### Installation
 
 1. **Clone the repository**
+
    ```bash
    git clone https://github.com/yourusername/openclaw-taskboard.git
    cd openclaw-taskboard
    ```
 
 2. **Configure environment**
+
    ```bash
    cp .env.example .env
    # Edit .env with your OpenClaw token and generate an API key
    ```
 
 3. **Start the task board**
+
    ```bash
    docker-compose up -d
    ```
 
 4. **Open in browser**
-   ```
+
+   ```bash
    http://localhost:8080
    ```
 
@@ -75,14 +84,15 @@ The easiest way to set up the task board is to **ask your OpenClaw agent to do i
 
 Once the task board is running, prompt your OpenClaw agent:
 
-```
-I have the task board running at http://localhost:8080. 
-Please onboard it as a channel plugin so you can receive 
-messages from the command bar and spawn sub-agents when 
+```prompt
+I have the task board running at http://localhost:8080.
+Please onboard it as a channel plugin so you can receive
+messages from the command bar and spawn sub-agents when
 tasks move to "In Progress".
 ```
 
 Your agent will:
+
 1. Update the `.env` with the correct gateway URL and token
 2. Verify the connection is working
 3. Test the `/tools/invoke` API
@@ -91,13 +101,14 @@ Your agent will:
 
 To set up the multi-agent dev team, prompt your agent:
 
-```
-I want to set up the dev team sub-agents (Architect, Security Auditor, 
-Code Reviewer, UX Manager). Please configure them in OpenClaw so they 
+```prompt
+I want to set up the dev team sub-agents (Architect, Security Auditor,
+Code Reviewer, UX Manager). Please configure them in OpenClaw so they
 can be spawned from the task board.
 ```
 
 Your agent will guide you through:
+
 1. Adding agent definitions to your OpenClaw config
 2. Setting up the `dev-team.md` guardrails file
 3. Configuring spawn permissions
@@ -161,6 +172,7 @@ cp examples/dev-team-example.md ~/.openclaw/workspace/agents/dev-team.md
 ```
 
 Edit `dev-team.md` to customize:
+
 - **Filesystem boundaries** — Paths agents can access
 - **Compliance context** — Your security requirements
 - **System prompts** — Role-specific instructions
@@ -230,6 +242,7 @@ These customize the agent guardrails and system prompts for your project:
 **📖 See [OPENCLAW_SETUP.md](OPENCLAW_SETUP.md) for the full integration guide.**
 
 Quick overview:
+
 1. **Configure agents** in OpenClaw (`architect`, `security-auditor`, `code-reviewer`, `ux-manager`)
 2. **Set your token** in `.env`
 3. **Add task board handler** to your agent's `TOOLS.md`
@@ -240,7 +253,7 @@ The task board will auto-spawn agent sessions when tasks move to "In Progress".
 
 ## 📋 Workflow
 
-```
+```mermaid
 Backlog → In Progress → Review → Done
               ↓
            Blocked
@@ -260,7 +273,7 @@ Each task card maintains its own **isolated AI session**. This is a game-changer
 
 ### How It Works
 
-```
+```mermaid
 Task #1: "Review Auth System"          Task #2: "Design API Schema"
          ↓                                      ↓
 ┌─────────────────────┐              ┌─────────────────────┐
@@ -285,7 +298,7 @@ Task #1: "Review Auth System"          Task #2: "Design API Schema"
 
 Need a second opinion? Tag another agent into the conversation.
 
-```
+```mermaid
 You: "@Security Auditor can you review the auth approach here?"
          ↓
 Security Auditor receives context + responds in same thread
@@ -313,7 +326,7 @@ Action items track **what needs attention** with notification bubbles on cards:
 
 ## 🏗️ Architecture
 
-```
+```mermaid
 ┌─────────────────────────────────────────────────────────┐
 │                    Task Board UI                         │
 │       WebSocket ←→ FastAPI Backend ←→ SQLite            │
@@ -333,6 +346,7 @@ Action items track **what needs attention** with notification bubbles on cards:
 ## 🔌 API Endpoints
 
 ### Tasks
+
 - `GET /api/tasks` — List all tasks
 - `POST /api/tasks` — Create task
 - `PATCH /api/tasks/{id}` — Update task
@@ -340,19 +354,23 @@ Action items track **what needs attention** with notification bubbles on cards:
 - `POST /api/tasks/{id}/move` — Move task to status
 
 ### Comments
+
 - `GET /api/tasks/{id}/comments` — Get comments
 - `POST /api/tasks/{id}/comments` — Add comment
 
 ### Action Items
+
 - `GET /api/tasks/{id}/action-items` — Get action items
 - `POST /api/tasks/{id}/action-items` — Create action item
 - `POST /api/action-items/{id}/resolve` — Resolve item
 
 ### Command Bar
+
 - `POST /api/jarvis/chat` — Send message to main agent
 - `POST /api/jarvis/respond` — Push response to command bar
 
 ### WebSocket
+
 - `WS /ws` — Real-time updates
 
 ---

@@ -5,6 +5,7 @@ This document explains how to configure OPENCLAW to work with the OPENCLAW Task 
 ## Overview
 
 When you drag a task to "In Progress", the task board automatically:
+
 1. Calls OPENCLAW's `/tools/invoke` API
 2. Spawns a sub-agent session with `sessions_spawn`
 3. Passes the task details and guardrails to the agent
@@ -38,7 +39,7 @@ agents:
       You are the Architect for a software project.
       Focus on system design, patterns, scalability, and technical trade-offs.
       Be concise. Flag concerns with severity (CRITICAL/HIGH/MEDIUM/LOW).
-    
+
   security-auditor:
     model: anthropic/claude-sonnet-4-20250514
     systemPrompt: |
@@ -46,14 +47,14 @@ agents:
       Focus on SOC2, HIPAA, CIS Controls compliance.
       Review for vulnerabilities, credential handling, data isolation.
       Rate findings: CRITICAL (blocks deploy) / HIGH / MEDIUM / LOW
-    
+
   code-reviewer:
     model: anthropic/claude-sonnet-4-20250514
     systemPrompt: |
       You are a Code Reviewer.
       Focus on Python/Django best practices, DRY, SOLID, error handling.
       Format: MUST FIX / SHOULD FIX / CONSIDER / NICE TO HAVE
-    
+
   ux-manager:
     model: anthropic/claude-sonnet-4-20250514
     systemPrompt: |
@@ -71,6 +72,7 @@ OPENCLAW config get gateway.token
 ```
 
 Or check your `config.yaml`:
+
 ```yaml
 gateway:
   token: "your-token-here"
@@ -85,6 +87,7 @@ cp .env.example .env
 ```
 
 Edit `.env`:
+
 ```env
 OPENCLAW_GATEWAY_URL=http://host.docker.internal:18789
 OPENCLAW_TOKEN=your-OPENCLAW-token-here
@@ -162,7 +165,7 @@ This pushes the response to the command bar via WebSocket for real-time two-way 
 
 When agents are spawned, they receive these guardrails:
 
-```
+```prompt
 ⚠️ MANDATORY CONSTRAINTS:
 
 FILESYSTEM BOUNDARIES:
@@ -189,16 +192,19 @@ You can customize guardrails in `app.py` → `AGENT_GUARDRAILS`.
 ### Sessions not spawning?
 
 1. **Check OPENCLAW is running:**
+
    ```bash
    OPENCLAW status
    ```
 
 2. **Check the token is correct:**
+
    ```bash
    curl -H "Authorization: Bearer YOUR_TOKEN" http://localhost:18789/api/status
    ```
 
 3. **Check agent exists:**
+
    ```bash
    OPENCLAW config get agents.architect
    ```
@@ -216,6 +222,7 @@ You can customize guardrails in `app.py` → `AGENT_GUARDRAILS`.
 ### Agents not posting comments?
 
 The agent needs to make HTTP calls to the task board. Ensure:
+
 1. Agent can reach `http://localhost:8080` (or your task board URL)
 2. No firewall blocking the connection
 3. Check agent logs for HTTP errors
@@ -224,7 +231,7 @@ The agent needs to make HTTP calls to the task board. Ensure:
 
 ## Architecture Flow
 
-```
+```mermaid
 ┌─────────────────────────────────────────────────────────────┐
 │                      Task Board UI                          │
 │   User drags task to "In Progress"                         │
