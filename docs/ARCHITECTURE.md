@@ -39,7 +39,7 @@
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │                         ENDPOINTS                                        ││
 │  │  /api/tasks    /api/comments    /api/action-items    /api/config        ││
-│  │  /api/jarvis   /api/sessions    /api/activity        /api/agents        ││
+│  │  /api/bot42   /api/sessions    /api/activity        /api/agents        ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │  ┌──────────────────┐ ┌──────────────────┐ ┌───────────────────────────────┐│
 │  │ WebSocket Manager│ │  Agent Spawner   │ │     Security Layer            ││
@@ -273,7 +273,7 @@ Task #5
 │  ┌─────────────────────────────────────────────────────────────────────────┐│
 │  │  Authorization: Bearer <TASKBOARD_API_KEY>                              ││
 │  │  X-API-Key: <TASKBOARD_API_KEY>                                         ││
-│  │  Required for: /api/jarvis/respond                                       ││
+│  │  Required for: /api/bot42/respond                                       ││
 │  └─────────────────────────────────────────────────────────────────────────┘│
 │                                                                              │
 │  Layer 3: Internal-Only Check                                               │

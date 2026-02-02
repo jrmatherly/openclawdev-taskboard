@@ -40,7 +40,7 @@ STATIC_PATH = Path(__file__).parent / "static"
 # =============================================================================
 # BRANDING (configurable via environment variables)
 # =============================================================================
-MAIN_AGENT_NAME = os.getenv("MAIN_AGENT_NAME", "Jarvis")
+MAIN_AGENT_NAME = os.getenv("MAIN_AGENT_NAME", "Bot42")
 MAIN_AGENT_EMOJI = os.getenv("MAIN_AGENT_EMOJI", "\U0001f6e1")
 HUMAN_NAME = os.getenv("HUMAN_NAME", "User")
 HUMAN_SUPERVISOR_LABEL = os.getenv("HUMAN_SUPERVISOR_LABEL", "User")
@@ -304,7 +304,7 @@ async def spawn_mentioned_agent(
 ):
     """Spawn a session for an @mentioned agent to contribute to a task they don't own.
 
-    For the main agent (Jarvis), sends to main session instead of spawning.
+    For the main agent (Bot42), sends to main session instead of spawning.
     """
     if not OPENCLAW_ENABLED:
         return None
@@ -526,7 +526,7 @@ async def spawn_agent_session(
     agent_id = AGENT_TO_OPENCLAW_ID.get(agent_name)
     if not agent_id:
         return None  # Don't spawn for unknown agents
-    # Note: Main agent (Jarvis) CAN spawn subagents now - no special case
+    # Note: Main agent (Bot42) CAN spawn subagents now - no special case
 
     # Build the task prompt with guardrails
     system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id, "")
@@ -1580,11 +1580,11 @@ def get_activity(limit: int = 50):
 
 
 # =============================================================================
-# JARVIS DIRECT CHAT (Command Bar Channel)
+# BOT42 DIRECT CHAT (Command Bar Channel)
 # =============================================================================
 
 
-class JarvisMessage(BaseModel):
+class Bot42Message(BaseModel):
     message: str
     session: str = "main"  # Which session to send to
     attachments: Optional[List[dict]] = (
@@ -1648,7 +1648,7 @@ async def list_sessions():
 
                         # Use OpenClaw's label
                         if key == "main" or key == "agent:main:main":
-                            label = "🛡️ Jarvis (Main)"
+                            label = "🛡️ Bot42 (Main)"
                         elif session_label:
                             # Use OpenClaw's label if available
                             label = f"🤖 {session_label}"
@@ -1941,7 +1941,7 @@ async def delete_session(session_key: str):
     }
 
 
-@app.get("/api/jarvis/history")
+@app.get("/api/bot42/history")
 def get_chat_history(limit: int = 100, session: str = "main"):
     """Get command bar chat history from database, filtered by session."""
     with get_db() as conn:
@@ -1965,9 +1965,9 @@ def get_chat_history(limit: int = 100, session: str = "main"):
         return {"history": messages, "session": session}
 
 
-@app.post("/api/jarvis/chat")
-async def chat_with_jarvis(msg: JarvisMessage):
-    """Send a message to Jarvis via sessions_send (synchronous, waits for response)."""
+@app.post("/api/bot42/chat")
+async def chat_with_bot42(msg: Bot42Message):
+    """Send a message to Bot42 via sessions_send (synchronous, waits for response)."""
     if not OPENCLAW_ENABLED:
         return {"sent": False, "error": "OpenClaw integration not enabled."}
 
@@ -2099,11 +2099,11 @@ async def chat_with_jarvis(msg: JarvisMessage):
                 return {"sent": False, "error": error_text}
 
     except Exception as e:
-        print(f"Error sending to Jarvis: {e}")
+        print(f"Error sending to Bot42: {e}")
         return {"sent": False, "error": str(e)}
 
 
-class JarvisResponse(BaseModel):
+class Bot42Response(BaseModel):
     response: str
     session: str = "main"  # Which session this response is for
 
@@ -2115,13 +2115,13 @@ class JarvisResponse(BaseModel):
         return v
 
 
-@app.post("/api/jarvis/respond")
-async def jarvis_respond(msg: JarvisResponse, _: bool = Depends(verify_api_key)):
-    """Endpoint for Jarvis to push responses back to the command bar. Requires API key."""
+@app.post("/api/bot42/respond")
+async def bot42_respond(msg: Bot42Response, _: bool = Depends(verify_api_key)):
+    """Endpoint for Bot42 to push responses back to the command bar. Requires API key."""
     now = datetime.now().isoformat()
     session_key = msg.session or "main"
 
-    # Store Jarvis response in database
+    # Store Bot42 response in database
     with get_db() as conn:
         cursor = conn.execute(
             "INSERT INTO chat_messages (session_key, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -2130,7 +2130,7 @@ async def jarvis_respond(msg: JarvisResponse, _: bool = Depends(verify_api_key))
         conn.commit()
         msg_id = cursor.lastrowid
 
-    jarvis_msg = {
+    bot42_msg = {
         "id": msg_id,
         "session_key": session_key,
         "role": "assistant",
@@ -2139,21 +2139,21 @@ async def jarvis_respond(msg: JarvisResponse, _: bool = Depends(verify_api_key))
     }
 
     # Broadcast to all connected clients
-    await manager.broadcast({"type": "command_bar_message", "message": jarvis_msg})
+    await manager.broadcast({"type": "command_bar_message", "message": bot42_msg})
     return {"delivered": True}
 
 
 # Legacy endpoint for backwards compatibility
 @app.post("/api/molt/chat")
-async def chat_with_molt_legacy(msg: JarvisMessage):
-    """Legacy endpoint - redirects to /api/jarvis/chat."""
-    return await chat_with_jarvis(msg)
+async def chat_with_molt_legacy(msg: Bot42Message):
+    """Legacy endpoint - redirects to /api/bot42/chat."""
+    return await chat_with_bot42(msg)
 
 
 @app.post("/api/molt/respond")
-async def jarvis_respond_legacy(msg: JarvisResponse, _: bool = Depends(verify_api_key)):
-    """Legacy endpoint - redirects to /api/jarvis/respond."""
-    return await jarvis_respond(msg, _)
+async def bot42_respond_legacy(msg: Bot42Response, _: bool = Depends(verify_api_key)):
+    """Legacy endpoint - redirects to /api/bot42/respond."""
+    return await bot42_respond(msg, _)
 
 
 if __name__ == "__main__":

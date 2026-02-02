@@ -38,9 +38,9 @@
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/api/jarvis/history` | Get chat history |
-| POST | `/api/jarvis/chat` | Send message to agent |
-| POST | `/api/jarvis/respond` | Push agent response (requires API key) |
+| GET | `/api/bot42/history` | Get chat history |
+| POST | `/api/bot42/chat` | Send message to agent |
+| POST | `/api/bot42/respond` | Push agent response (requires API key) |
 
 ## Sessions
 

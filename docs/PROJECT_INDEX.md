@@ -193,13 +193,13 @@ Single-page application with:
 | `POST` | `/api/action-items/{id}/unarchive` | Unarchive item |
 | `DELETE` | `/api/action-items/{id}` | Delete item |
 
-### Command Bar (Jarvis Chat)
+### Command Bar (Bot42 Chat)
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/api/jarvis/history` | Get chat history |
-| `POST` | `/api/jarvis/chat` | Send message to agent |
-| `POST` | `/api/jarvis/respond` | Agent pushes response (requires API key) |
+| `GET` | `/api/bot42/history` | Get chat history |
+| `POST` | `/api/bot42/chat` | Send message to agent |
+| `POST` | `/api/bot42/respond` | Agent pushes response (requires API key) |
 
 ### Sessions
 
@@ -344,7 +344,7 @@ CREATE TABLE deleted_sessions (
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `MAIN_AGENT_NAME` | Jarvis | Main agent display name |
+| `MAIN_AGENT_NAME` | Bot42 | Main agent display name |
 | `MAIN_AGENT_EMOJI` | 🛡️ | Main agent emoji |
 | `HUMAN_NAME` | User | Human user display name |
 | `HUMAN_SUPERVISOR_LABEL` | User | Supervisor label |

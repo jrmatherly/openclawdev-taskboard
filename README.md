@@ -362,8 +362,8 @@ Action items track **what needs attention** with notification bubbles on cards:
 
 ### Command Bar
 
-- `POST /api/jarvis/chat` — Send message to main agent
-- `POST /api/jarvis/respond` — Push response to command bar
+- `POST /api/bot42/chat` — Send message to main agent
+- `POST /api/bot42/respond` — Push response to command bar
 
 ### WebSocket
 

@@ -12,7 +12,7 @@
 3. [Tasks](#tasks)
 4. [Comments](#comments)
 5. [Action Items](#action-items)
-6. [Command Bar (Jarvis)](#command-bar-jarvis)
+6. [Command Bar (Bot42)](#command-bar-bot42)
 7. [Sessions](#sessions)
 8. [WebSocket](#websocket)
 9. [Error Handling](#error-handling)
@@ -39,7 +39,7 @@ X-API-Key: YOUR_API_KEY
 
 | Endpoint | Auth Required |
 |----------|---------------|
-| `POST /api/jarvis/respond` | Yes |
+| `POST /api/bot42/respond` | Yes |
 | All other endpoints | No* |
 
 *If `TASKBOARD_API_KEY` is not set, auth is disabled.
@@ -56,11 +56,11 @@ Get board configuration including agents, statuses, and branding.
 
 ```json
 {
-  "agents": ["Jarvis", "Architect", "Security Auditor", "Code Reviewer", "UX Manager", "User", "Unassigned"],
+  "agents": ["Bot42", "Architect", "Security Auditor", "Code Reviewer", "UX Manager", "User", "Unassigned"],
   "statuses": ["Backlog", "In Progress", "Review", "Done", "Blocked"],
   "priorities": ["Critical", "High", "Medium", "Low"],
   "branding": {
-    "mainAgentName": "Jarvis",
+    "mainAgentName": "Bot42",
     "mainAgentEmoji": "🛡️",
     "humanName": "User",
     "humanSupervisorLabel": "User",
@@ -531,9 +531,9 @@ Delete an action item.
 
 ---
 
-## Command Bar (Jarvis)
+## Command Bar (Bot42)
 
-### GET /api/jarvis/history
+### GET /api/bot42/history
 
 Get command bar chat history.
 
@@ -568,7 +568,7 @@ Get command bar chat history.
 }
 ```
 
-### POST /api/jarvis/chat
+### POST /api/bot42/chat
 
 Send a message to the main agent.
 
@@ -613,7 +613,7 @@ Send a message to the main agent.
 }
 ```
 
-### POST /api/jarvis/respond
+### POST /api/bot42/respond
 
 Push a response to the command bar (agent → UI).
 
@@ -656,7 +656,7 @@ List all OpenClaw sessions.
   "sessions": [
     {
       "key": "agent:main:main",
-      "label": "🛡️ Jarvis (Main)",
+      "label": "🛡️ Bot42 (Main)",
       "channel": "",
       "model": "claude-sonnet-4",
       "updatedAt": 1706789100
@@ -920,8 +920,8 @@ For backward compatibility, these legacy endpoints are available:
 
 | Legacy | Current |
 |--------|---------|
-| `POST /api/molt/chat` | `POST /api/jarvis/chat` |
-| `POST /api/molt/respond` | `POST /api/jarvis/respond` |
+| `POST /api/molt/chat` | `POST /api/bot42/chat` |
+| `POST /api/molt/respond` | `POST /api/bot42/respond` |
 
 ---
 
