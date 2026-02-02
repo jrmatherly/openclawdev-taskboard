@@ -1,0 +1,111 @@
+# mise.toml - OpenClaw DEV TaskBoard
+# Manages tools, environment, and tasks for development workflow
+min_version = "2024.12.0"
+
+[env]
+PROJECT_NAME = "openclawdev-taskboard"
+PYTHONUNBUFFERED = "1"
+
+[settings]
+# Enable experimental features (required for hooks)
+experimental = true
+# Use uv's virtual environment if it exists
+python.uv_venv_auto = true
+
+[tools]
+# Core runtime
+python = "3.12"
+uv = "latest"
+
+# Linting & formatting
+ruff = "latest"
+
+# Git hooks (hk requires pkl)
+hk = "latest"
+pkl = "latest"
+
+# =============================================================================
+# TASKS
+# =============================================================================
+
+[tasks.install]
+description = "Install Python dependencies"
+alias = "i"
+run = "uv sync"
+
+[tasks.dev]
+description = "Run development server with hot reload"
+alias = "d"
+run = "uv run uvicorn app:app --host 0.0.0.0 --port 8080 --reload"
+
+[tasks.lint]
+description = "Run linter (check only)"
+alias = "l"
+run = "uv run ruff check app.py"
+
+[tasks.lint-fix]
+description = "Run linter with auto-fix"
+run = "uv run ruff check --fix app.py"
+
+[tasks.format]
+description = "Format code"
+alias = "f"
+run = "uv run ruff format app.py"
+
+[tasks.format-check]
+description = "Check code formatting"
+run = "uv run ruff format --check app.py"
+
+[tasks.check]
+description = "Run all quality checks"
+depends = ["lint", "format-check"]
+
+[tasks.fix]
+description = "Fix all auto-fixable issues"
+depends = ["lint-fix", "format"]
+
+[tasks.build]
+description = "Build Docker image"
+alias = "b"
+run = "docker build -t openclaw-dev-taskboard ."
+
+[tasks.up]
+description = "Start services with docker-compose"
+run = "docker-compose up -d"
+
+[tasks.down]
+description = "Stop services"
+run = "docker-compose down"
+
+[tasks.logs]
+description = "View container logs"
+run = "docker-compose logs -f taskboard"
+
+[tasks.test]
+description = "Run tests"
+alias = "t"
+run = "uv run pytest"
+
+[tasks.ci]
+description = "Run full CI pipeline"
+depends = ["check", "test", "build"]
+
+[tasks.pre-commit]
+description = "Pre-commit hook (called by hk)"
+run = "hk run pre-commit"
+
+[tasks.hk-check]
+description = "Run hk checks on all files"
+run = "hk check --all"
+
+[tasks.hk-fix]
+description = "Run hk fixes on all files"
+run = "hk fix --all"
+
+# =============================================================================
+# HOOKS (experimental - require mise activate)
+# =============================================================================
+
+[hooks]
+enter = "echo '🛡 OpenClaw DEV TaskBoard environment loaded'"
+postinstall = "uv sync"
