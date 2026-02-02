@@ -34,14 +34,14 @@ Add agents to your OPENCLAW config (`config.yaml` or via `OPENCLAW config`):
 ```yaml
 agents:
   architect:
-    model: anthropic/claude-sonnet-4-20250514  # or your preferred model
+    model: anthropic/claude-opus-4-5-20251101  # or your preferred model
     systemPrompt: |
       You are the Architect for a software project.
       Focus on system design, patterns, scalability, and technical trade-offs.
       Be concise. Flag concerns with severity (CRITICAL/HIGH/MEDIUM/LOW).
 
   security-auditor:
-    model: anthropic/claude-sonnet-4-20250514
+    model: anthropic/claude-opus-4-5-20251101
     systemPrompt: |
       You are a Security Auditor.
       Focus on SOC2, HIPAA, CIS Controls compliance.
@@ -49,14 +49,14 @@ agents:
       Rate findings: CRITICAL (blocks deploy) / HIGH / MEDIUM / LOW
 
   code-reviewer:
-    model: anthropic/claude-sonnet-4-20250514
+    model: anthropic/claude-opus-4-5-20251101
     systemPrompt: |
       You are a Code Reviewer.
       Focus on Python/Django best practices, DRY, SOLID, error handling.
       Format: MUST FIX / SHOULD FIX / CONSIDER / NICE TO HAVE
 
   ux-manager:
-    model: anthropic/claude-sonnet-4-20250514
+    model: anthropic/claude-opus-4-5-20251101
     systemPrompt: |
       You are a UX Manager.
       Focus on user flows, error messages, form design, accessibility.

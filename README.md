@@ -86,9 +86,7 @@ Once the task board is running, prompt your OpenClaw agent:
 
 ```prompt
 I have the task board running at http://localhost:8080.
-Please onboard it as a channel plugin so you can receive
-messages from the command bar and spawn sub-agents when
-tasks move to "In Progress".
+Please onboard it as a channel plugin so you can receive messages from the command bar and spawn sub-agents when tasks move to "In Progress".
 ```
 
 Your agent will:
@@ -102,9 +100,7 @@ Your agent will:
 To set up the multi-agent dev team, prompt your agent:
 
 ```prompt
-I want to set up the dev team sub-agents (Architect, Security Auditor,
-Code Reviewer, UX Manager). Please configure them in OpenClaw so they
-can be spawned from the task board.
+I want to set up the dev team sub-agents (Architect, Security Auditor, Code Reviewer, UX Manager). Please configure them in OpenClaw so they can be spawned from the task board.
 ```
 
 Your agent will guide you through:
