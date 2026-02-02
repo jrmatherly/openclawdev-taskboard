@@ -1,0 +1,1061 @@
+openapi: 3.0.3
+info:
+  title: OpenClaw DEV Task Board API
+  description: |
+    Real-time Kanban board designed for multi-agent AI workflows with OpenClaw integration.
+
+    ## Features
+    - Live task management with WebSocket updates
+    - Multi-agent assignment and automated session spawning
+    - Comments with @mention support for agent tagging
+    - Action items for questions, blockers, and completion tracking
+    - Command bar chat with AI agents
+
+    ## Authentication
+    Protected endpoints require API key authentication via:
+    - `Authorization: Bearer <token>` header
+    - `X-API-Key: <token>` header
+
+    ## Real-time Updates
+    Connect to `WS /ws` for live updates. Send `ping` for keepalive.
+  version: 1.2.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  contact:
+    name: OpenClaw Dev TaskBoard
+    url: https://github.com/openclaw/openclaw-taskboard
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Tasks
+    description: Task CRUD and workflow operations
+  - name: Comments
+    description: Task comments with @mention support
+  - name: Action Items
+    description: Questions, blockers, and completion tracking
+  - name: Chat
+    description: Command bar chat with AI agents
+  - name: Sessions
+    description: OpenClaw agent session management
+  - name: Configuration
+    description: Board configuration and activity
+
+paths:
+  /api/config:
+    get:
+      tags: [Configuration]
+      summary: Get board configuration
+      description: Returns agents, statuses, priorities, and branding settings
+      operationId: getConfig
+      responses:
+        "200":
+          description: Board configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BoardConfig"
+
+  /api/activity:
+    get:
+      tags: [Configuration]
+      summary: Get activity log
+      operationId: getActivity
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Maximum entries to return
+      responses:
+        "200":
+          description: Activity log entries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityEntry"
+
+  /api/tasks:
+    get:
+      tags: [Tasks]
+      summary: List all tasks
+      operationId: listTasks
+      parameters:
+        - name: board
+          in: query
+          schema:
+            type: string
+            default: tasks
+          description: Filter by board name
+        - name: agent
+          in: query
+          schema:
+            type: string
+          description: Filter by assigned agent
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Backlog, In Progress, Review, Done, Blocked]
+          description: Filter by status
+      responses:
+        "200":
+          description: List of tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+
+    post:
+      tags: [Tasks]
+      summary: Create a new task
+      operationId: createTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreate"
+      responses:
+        "200":
+          description: Created task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+
+  /api/tasks/{taskId}:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Task ID
+
+    get:
+      tags: [Tasks]
+      summary: Get a single task
+      operationId: getTask
+      responses:
+        "200":
+          description: Task details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    patch:
+      tags: [Tasks]
+      summary: Update a task
+      operationId: updateTask
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskUpdate"
+      responses:
+        "200":
+          description: Updated task
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+    delete:
+      tags: [Tasks]
+      summary: Delete a task
+      operationId: deleteTask
+      responses:
+        "200":
+          description: Deletion confirmation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: deleted
+                  id:
+                    type: integer
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/move:
+    post:
+      tags: [Tasks]
+      summary: Move task to new status
+      description: |
+        Moves a task with workflow automation:
+        - → In Progress: Auto-spawns agent session
+        - → Review: Creates completion action item
+        - → Blocked: Creates blocker action item
+        - → Done: Only allowed for User agent; clears session
+      operationId: moveTask
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: status
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [Backlog, In Progress, Review, Done, Blocked]
+        - name: agent
+          in: query
+          schema:
+            type: string
+          description: Agent making the move
+        - name: reason
+          in: query
+          schema:
+            type: string
+          description: Reason for move (creates action item)
+      responses:
+        "200":
+          description: Move result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MoveResult"
+        "403":
+          description: Only User can move to Done
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/start-work:
+    post:
+      tags: [Tasks]
+      summary: Mark agent as working
+      operationId: startWork
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: agent
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Work started
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: working
+                  task_id:
+                    type: integer
+                  agent:
+                    type: string
+
+  /api/tasks/{taskId}/stop-work:
+    post:
+      tags: [Tasks]
+      summary: Clear working indicator
+      operationId: stopWork
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: agent
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Work stopped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: stopped
+                  task_id:
+                    type: integer
+
+  /api/tasks/{taskId}/comments:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags: [Comments]
+      summary: Get task comments
+      operationId: getComments
+      responses:
+        "200":
+          description: List of comments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Comment"
+
+    post:
+      tags: [Comments]
+      summary: Add a comment
+      description: |
+        Comments containing @AgentName will spawn the mentioned agent
+        to respond in the conversation.
+      operationId: addComment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CommentCreate"
+      responses:
+        "200":
+          description: Created comment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Comment"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/tasks/{taskId}/action-items:
+    parameters:
+      - name: taskId
+        in: path
+        required: true
+        schema:
+          type: integer
+
+    get:
+      tags: [Action Items]
+      summary: Get action items
+      operationId: getActionItems
+      parameters:
+        - name: resolved
+          in: query
+          schema:
+            type: boolean
+            default: false
+        - name: archived
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: List of action items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActionItem"
+
+    post:
+      tags: [Action Items]
+      summary: Create action item
+      operationId: addActionItem
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionItemCreate"
+      responses:
+        "200":
+          description: Created action item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionItem"
+
+  /api/action-items/{itemId}/resolve:
+    post:
+      tags: [Action Items]
+      summary: Resolve action item
+      operationId: resolveActionItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Resolution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionItemResult"
+
+  /api/action-items/{itemId}/unresolve:
+    post:
+      tags: [Action Items]
+      summary: Unresolve action item
+      operationId: unresolveActionItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Unresolve result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionItemResult"
+
+  /api/action-items/{itemId}/archive:
+    post:
+      tags: [Action Items]
+      summary: Archive action item
+      operationId: archiveActionItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Archive result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionItemResult"
+
+  /api/action-items/{itemId}:
+    delete:
+      tags: [Action Items]
+      summary: Delete action item
+      operationId: deleteActionItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionItemResult"
+
+  /api/jarvis/history:
+    get:
+      tags: [Chat]
+      summary: Get chat history
+      operationId: getChatHistory
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 100
+        - name: session
+          in: query
+          schema:
+            type: string
+            default: main
+      responses:
+        "200":
+          description: Chat history
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatHistory"
+
+  /api/jarvis/chat:
+    post:
+      tags: [Chat]
+      summary: Send message to agent
+      description: Sends message to OpenClaw agent and returns response
+      operationId: chatWithAgent
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatMessage"
+      responses:
+        "200":
+          description: Chat response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatResponse"
+
+  /api/jarvis/respond:
+    post:
+      tags: [Chat]
+      summary: Push agent response
+      description: For agents to push responses to the command bar
+      operationId: pushAgentResponse
+      security:
+        - bearerAuth: []
+        - apiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AgentResponse"
+      responses:
+        "200":
+          description: Delivery confirmation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  delivered:
+                    type: boolean
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/sessions:
+    get:
+      tags: [Sessions]
+      summary: List OpenClaw sessions
+      operationId: listSessions
+      responses:
+        "200":
+          description: List of sessions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionList"
+
+  /api/sessions/create:
+    post:
+      tags: [Sessions]
+      summary: Create new session
+      operationId: createSession
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionCreate"
+      responses:
+        "200":
+          description: Session creation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SessionCreateResult"
+
+  /api/sessions/{sessionKey}/stop:
+    post:
+      tags: [Sessions]
+      summary: Stop a session
+      operationId: stopSession
+      parameters:
+        - name: sessionKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stop result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+
+  /api/sessions/stop-all:
+    post:
+      tags: [Sessions]
+      summary: Emergency stop all sessions
+      operationId: stopAllSessions
+      responses:
+        "200":
+          description: Stop all result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  stopped:
+                    type: array
+                    items:
+                      type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
+                  message:
+                    type: string
+
+  /api/sessions/{sessionKey}:
+    delete:
+      tags: [Sessions]
+      summary: Delete a session
+      operationId: deleteSession
+      parameters:
+        - name: sessionKey
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  openclaw_deleted:
+                    type: boolean
+
+  /api/agents/{agent}/tasks:
+    get:
+      tags: [Tasks]
+      summary: Get agent's tasks
+      operationId: getAgentTasks
+      parameters:
+        - name: agent
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Agent's active tasks
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Task"
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    apiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  responses:
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Task not found
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              detail:
+                type: string
+                example: Invalid or missing API key
+
+  schemas:
+    Task:
+      type: object
+      required:
+        [id, title, status, priority, agent, created_at, updated_at, board]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+          enum: [Backlog, In Progress, Review, Done, Blocked]
+        priority:
+          type: string
+          enum: [Critical, High, Medium, Low]
+        agent:
+          type: string
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+        board:
+          type: string
+        source_file:
+          type: string
+          nullable: true
+        source_ref:
+          type: string
+          nullable: true
+        working_agent:
+          type: string
+          nullable: true
+
+    TaskCreate:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+          default: ""
+        status:
+          type: string
+          default: Backlog
+        priority:
+          type: string
+          default: Medium
+        agent:
+          type: string
+          default: Unassigned
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        board:
+          type: string
+          default: tasks
+        source_file:
+          type: string
+          nullable: true
+        source_ref:
+          type: string
+          nullable: true
+
+    TaskUpdate:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        priority:
+          type: string
+        agent:
+          type: string
+        due_date:
+          type: string
+        source_file:
+          type: string
+        source_ref:
+          type: string
+
+    MoveResult:
+      type: object
+      properties:
+        status:
+          type: string
+          example: moved
+        new_status:
+          type: string
+        action_item_created:
+          type: boolean
+        agent_spawned:
+          type: boolean
+        session_cleared:
+          type: boolean
+
+    Comment:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        agent:
+          type: string
+        content:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    CommentCreate:
+      type: object
+      required: [agent, content]
+      properties:
+        agent:
+          type: string
+          maxLength: 100
+        content:
+          type: string
+          description: Markdown content, max 10MB
+
+    ActionItem:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        comment_id:
+          type: integer
+          nullable: true
+        agent:
+          type: string
+        content:
+          type: string
+        item_type:
+          type: string
+          enum: [question, completion, blocker]
+        resolved:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+        resolved_at:
+          type: string
+          format: date-time
+          nullable: true
+        archived:
+          type: integer
+
+    ActionItemCreate:
+      type: object
+      required: [agent, content]
+      properties:
+        agent:
+          type: string
+        content:
+          type: string
+        item_type:
+          type: string
+          enum: [question, completion, blocker]
+          default: question
+        comment_id:
+          type: integer
+          nullable: true
+
+    ActionItemResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        item_id:
+          type: integer
+
+    BoardConfig:
+      type: object
+      properties:
+        agents:
+          type: array
+          items:
+            type: string
+        statuses:
+          type: array
+          items:
+            type: string
+        priorities:
+          type: array
+          items:
+            type: string
+        branding:
+          type: object
+          properties:
+            mainAgentName:
+              type: string
+            mainAgentEmoji:
+              type: string
+            humanName:
+              type: string
+            humanSupervisorLabel:
+              type: string
+            boardTitle:
+              type: string
+
+    ActivityEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        task_id:
+          type: integer
+        action:
+          type: string
+        agent:
+          type: string
+        details:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+
+    ChatMessage:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          description: Max 10MB
+        session:
+          type: string
+          default: main
+        attachments:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              data:
+                type: string
+              filename:
+                type: string
+
+    ChatResponse:
+      type: object
+      properties:
+        sent:
+          type: boolean
+        response:
+          type: string
+        session:
+          type: string
+        error:
+          type: string
+
+    AgentResponse:
+      type: object
+      required: [response]
+      properties:
+        response:
+          type: string
+          description: Max 1MB
+        session:
+          type: string
+          default: main
+
+    ChatHistory:
+      type: object
+      properties:
+        history:
+          type: array
+          items:
+            type: object
+            properties:
+              id:
+                type: integer
+              session_key:
+                type: string
+              role:
+                type: string
+                enum: [user, assistant]
+              content:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+              attachments:
+                type: array
+                items:
+                  type: object
+        session:
+          type: string
+
+    SessionList:
+      type: object
+      properties:
+        sessions:
+          type: array
+          items:
+            type: object
+            properties:
+              key:
+                type: string
+              label:
+                type: string
+              channel:
+                type: string
+              model:
+                type: string
+              updatedAt:
+                type: integer
+        error:
+          type: string
+
+    SessionCreate:
+      type: object
+      properties:
+        label:
+          type: string
+        agentId:
+          type: string
+          default: main
+        task:
+          type: string
+          default: New session started from Task Board. Awaiting instructions.
+
+    SessionCreateResult:
+      type: object
+      properties:
+        success:
+          type: boolean
+        result:
+          type: object
+          properties:
+            childSessionKey:
+              type: string
+            runId:
+              type: string
+        error:
+          type: string
