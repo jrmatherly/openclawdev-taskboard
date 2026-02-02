@@ -102,10 +102,16 @@ run = "hk check --all"
 description = "Run hk fixes on all files"
 run = "hk fix --all"
 
+[tasks."git:hooks:install"]
+description = "Install git hooks (run manually, not on enter)"
+run = "hk install --mise"
+
 # =============================================================================
 # HOOKS (experimental - require mise activate)
 # =============================================================================
+# Note: hk hooks should be installed manually with 'mise run git:hooks:install'
+# to prevent reinstallation from overwriting customized hooks
 
 [hooks]
-enter = "echo '🛡 OpenClaw DEV TaskBoard environment loaded'"
+enter = "mise install -q"
 postinstall = "uv sync"
