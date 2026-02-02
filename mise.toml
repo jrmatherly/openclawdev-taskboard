@@ -1,16 +1,16 @@
 # mise.toml - OpenClaw DEV TaskBoard
 # Manages tools, environment, and tasks for development workflow
-min_version = "2024.12.0"
+# https://mise.jdx.dev/configuration.html
+
+min_version = "2026.1.0"
 
 [env]
 PROJECT_NAME = "openclawdev-taskboard"
 PYTHONUNBUFFERED = "1"
 
-[settings]
-# Enable experimental features (required for hooks)
-experimental = true
-# Use uv's virtual environment if it exists
-python.uv_venv_auto = true
+# Automatically create and activate venv using uv
+_.python.venv = { path = ".venv", create = true }
+UV_LINK_MODE = "copy"
 
 [tools]
 # Core runtime
@@ -107,11 +107,10 @@ description = "Install git hooks (run manually, not on enter)"
 run = "hk install --mise"
 
 # =============================================================================
-# HOOKS (experimental - require mise activate)
+# HOOKS
 # =============================================================================
 # Note: hk hooks should be installed manually with 'mise run git:hooks:install'
 # to prevent reinstallation from overwriting customized hooks
-
-[hooks]
-enter = "mise install -q"
-postinstall = "uv sync"
+#
+# REMOVED: [hooks] enter = "mise install -q" - this caused repeated tool
+# installations on every terminal open and potential crashes
