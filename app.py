@@ -702,6 +702,19 @@ def init_db():
             conn.execute("ALTER TABLE tasks ADD COLUMN agent_session_key TEXT DEFAULT NULL")
         except sqlite3.OperationalError:
             pass  # Column already exists
+        # Add source_file column for task source tracking
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN source_file TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+        # Add source_ref column for task source reference
+        try:
+            conn.execute("ALTER TABLE tasks ADD COLUMN source_ref TEXT DEFAULT NULL")
+        except sqlite3.OperationalError:
+            pass  # Column already exists
+
+        # Fix any NULL status values from previous bugs
+        conn.execute("UPDATE tasks SET status = 'Backlog' WHERE status IS NULL")
 
         # Add archived column to action_items
         try:
@@ -1092,6 +1105,10 @@ class MoveRequest(BaseModel):
 @app.post("/api/tasks/{task_id}/move")
 async def move_task(task_id: int, status: str = None, agent: str = None, reason: str = None):
     """Quick move task to a new status with workflow rules."""
+    # Validate required status parameter
+    if not status:
+        raise HTTPException(status_code=400, detail="Status is required")
+
     now = datetime.now().isoformat()
 
     with get_db() as conn:
