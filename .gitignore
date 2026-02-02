@@ -1,18 +1,97 @@
-# Environment secrets - NEVER COMMIT
+# =============================================================================
+# SECRETS - NEVER COMMIT
+# =============================================================================
 .env
-*.env
+.env.*
+!.env.example
 
-# Database
+# =============================================================================
+# DATA
+# =============================================================================
 data/
 
-# Python
+# =============================================================================
+# PYTHON
+# =============================================================================
+.venv/
 __pycache__/
-*.pyc
-*.pyo
-.pytest_cache/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
 
+# =============================================================================
+# TOOLING CACHES
+# =============================================================================
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+
+# =============================================================================
 # IDE
+# =============================================================================
 .vscode/
 .idea/
+*.swp
+*.swo
+.local_docs/
 
+# =============================================================================
+# AI TOOLING (local settings only)
+# =============================================================================
+# Serena has its own .gitignore - don't ignore entire directory
+.claude/settings.local.json
 *.personalized
+
+# =============================================================================
+# MISE & HK (local overrides only)
+# =============================================================================
+mise.local.toml
+hk.local.pkl
+
+# =============================================================================
+# DRIFT (if used)
+# =============================================================================
+# Analysis caches (regenerated on demand)
+.drift/lake/
+.drift/cache/
+.drift/history/
+.drift/call-graph/
+.drift/module-coupling/
+.drift/test-topology/
+
+# Discovered patterns
+.drift/patterns/discovered/
+.drift/patterns/ignored/
+.drift/patterns/variants/
+
+# Constraints & Contracts
+.drift/constraints/discovered/
+.drift/constraints/ignored/
+.drift/contracts/discovered/
+.drift/contracts/ignored/
+.drift/contracts/mismatch/
+
+# Backup files
+.drift/**/.backups/
+
+# Note: These Drift files ARE committed (project configuration):
+# - .drift/config.json (project settings)
+# - .drift/manifest.json (project metadata)
+# - .drift/boundaries/rules.json (security rules)
+# - .drift/quality-gates/policies/*.json (quality gate policies)
+# - .drift/patterns/approved/*.json (approved patterns)
+# - .drift/indexes/*.json (pattern indexes)
+# - .drift/views/*.json (view caches for status)
+
+# =============================================================================
+# OS
+# =============================================================================
+.DS_Store
+Thumbs.db

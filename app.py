@@ -1,30 +1,36 @@
-﻿"""
+"""
 RIZQ Task Board - FastAPI Backend
 Simple, fast, full agent control, LIVE updates
 """
 
-import sqlite3
 import json
-import asyncio
-import re
-import httpx
-from datetime import datetime
-from pathlib import Path
-from typing import Optional, List, Set
-from contextlib import contextmanager
-
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, Header, Request
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, field_validator
 
 # =============================================================================
 # CONFIG
 # =============================================================================
 import os
+import re
 import secrets
-import hashlib
+import sqlite3
+from contextlib import contextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import List, Optional, Set
+
+import httpx
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+)
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, field_validator
 
 DATA_DIR = Path(__file__).parent / "data"
 DATA_DIR.mkdir(exist_ok=True)
@@ -35,12 +41,20 @@ STATIC_PATH = Path(__file__).parent / "static"
 # BRANDING (configurable via environment variables)
 # =============================================================================
 MAIN_AGENT_NAME = os.getenv("MAIN_AGENT_NAME", "Jarvis")
-MAIN_AGENT_EMOJI = os.getenv("MAIN_AGENT_EMOJI", "\U0001F6E1")
+MAIN_AGENT_EMOJI = os.getenv("MAIN_AGENT_EMOJI", "\U0001f6e1")
 HUMAN_NAME = os.getenv("HUMAN_NAME", "User")
 HUMAN_SUPERVISOR_LABEL = os.getenv("HUMAN_SUPERVISOR_LABEL", "User")
 BOARD_TITLE = os.getenv("BOARD_TITLE", "Task Board")
 
-AGENTS = [MAIN_AGENT_NAME, "Architect", "Security Auditor", "Code Reviewer", "UX Manager", "User", "Unassigned"]
+AGENTS = [
+    MAIN_AGENT_NAME,
+    "Architect",
+    "Security Auditor",
+    "Code Reviewer",
+    "UX Manager",
+    "User",
+    "Unassigned",
+]
 STATUSES = ["Backlog", "In Progress", "Review", "Done", "Blocked"]
 PRIORITIES = ["Critical", "High", "Medium", "Low"]
 
@@ -59,7 +73,9 @@ AGENT_TO_OPENCLAW_ID = AGENT_TO_OPENCLAW_ID
 
 # Build mention regex dynamically from agent names (including main agent now)
 MENTIONABLE_AGENTS = list(AGENT_TO_OPENCLAW_ID.keys())
-MENTION_PATTERN = re.compile(r'@(' + '|'.join(re.escape(a) for a in MENTIONABLE_AGENTS) + r')', re.IGNORECASE)
+MENTION_PATTERN = re.compile(
+    r"@(" + "|".join(re.escape(a) for a in MENTIONABLE_AGENTS) + r")", re.IGNORECASE
+)
 
 # Security: Load secrets from environment variables
 OPENCLAW_GATEWAY_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://host.docker.internal:18789")
@@ -88,57 +104,68 @@ MAX_ATTACHMENT_SIZE_BYTES = MAX_ATTACHMENT_SIZE_MB * 1024 * 1024
 # SECURITY
 # =============================================================================
 
+
 def verify_api_key(authorization: str = Header(None), x_api_key: str = Header(None)):
     """Verify API key from Authorization header or X-API-Key header."""
     if not TASKBOARD_API_KEY:
         return True  # Auth disabled if no key configured
-    
+
     # Check Authorization: Bearer <token>
     if authorization:
         if authorization.startswith("Bearer "):
             token = authorization[7:]
             if secrets.compare_digest(token, TASKBOARD_API_KEY):
                 return True
-    
+
     # Check X-API-Key header
     if x_api_key:
         if secrets.compare_digest(x_api_key, TASKBOARD_API_KEY):
             return True
-    
+
     raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
 
 def verify_internal_only(request: Request):
     """Only allow requests from localhost/internal sources."""
     client_host = request.client.host if request.client else None
-    allowed_hosts = ["127.0.0.1", "localhost", "::1", "172.17.0.1", "host.docker.internal"]
-    
+    allowed_hosts = [
+        "127.0.0.1",
+        "localhost",
+        "::1",
+        "172.17.0.1",
+        "host.docker.internal",
+    ]
+
     # Also allow Docker internal IPs (172.x.x.x)
     if client_host and (client_host in allowed_hosts or client_host.startswith("172.")):
         return True
-    
+
     # If API key is provided, allow from anywhere
     if TASKBOARD_API_KEY:
         return True
-    
+
     raise HTTPException(status_code=403, detail="Access denied")
+
 
 async def notify_OPENCLAW(task_id: int, task_title: str, comment_agent: str, comment_content: str):
     """Send webhook to OpenClaw when a comment needs attention."""
     if not OPENCLAW_ENABLED or comment_agent == MAIN_AGENT_NAME:
         return  # Don't notify for main agent's own comments
-    
+
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             # Use OPENCLAW's cron wake endpoint
             payload = {
                 "action": "wake",
-                "text": f"💬 Task Board: New comment on #{task_id} ({task_title}) from {comment_agent}:\n\n{comment_content[:200]}{'...' if len(comment_content) > 200 else ''}\n\nCheck and respond: http://localhost:8080"
+                "text": f"💬 Task Board: New comment on #{task_id} ({task_title}) from {comment_agent}:\n\n{comment_content[:200]}{'...' if len(comment_content) > 200 else ''}\n\nCheck and respond: http://localhost:8080",
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
-            await client.post(f"{OPENCLAW_GATEWAY_URL}/api/cron/wake", json=payload, headers=headers)
+            await client.post(
+                f"{OPENCLAW_GATEWAY_URL}/api/cron/wake", json=payload, headers=headers
+            )
             print(f"Notified OPENCLAW about comment from {comment_agent}")
     except Exception as e:
         print(f"Webhook to OPENCLAW failed: {e}")
@@ -148,24 +175,19 @@ async def send_to_agent_session(session_key: str, message: str) -> bool:
     """Send a follow-up message to an active agent session."""
     if not OPENCLAW_ENABLED or not session_key:
         return False
-    
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {
                 "tool": "sessions_send",
-                "args": {
-                    "sessionKey": session_key,
-                    "message": message
-                }
+                "args": {"sessionKey": session_key, "message": message},
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
             result = response.json() if response.status_code == 200 else None
             if result and result.get("ok"):
@@ -182,22 +204,30 @@ async def send_to_agent_session(session_key: str, message: str) -> bool:
 def get_task_session(task_id: int) -> Optional[str]:
     """Get the active agent session key for a task."""
     with get_db() as conn:
-        row = conn.execute("SELECT agent_session_key FROM tasks WHERE id = ?", (task_id,)).fetchone()
+        row = conn.execute(
+            "SELECT agent_session_key FROM tasks WHERE id = ?", (task_id,)
+        ).fetchone()
         return row["agent_session_key"] if row and row["agent_session_key"] else None
 
 
-async def spawn_followup_session(task_id: int, task_title: str, agent_name: str, previous_context: str, new_message: str):
+async def spawn_followup_session(
+    task_id: int,
+    task_title: str,
+    agent_name: str,
+    previous_context: str,
+    new_message: str,
+):
     """Spawn a follow-up session for an agent with conversation context."""
     if not OPENCLAW_ENABLED:
         return None
-    
+
     agent_id = AGENT_TO_OPENCLAW_ID.get(agent_name)
     if not agent_id:
         return None
     # Main agent can spawn follow-up sessions too
-    
+
     system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id, "")
-    
+
     followup_prompt = f"""# Follow-up on Task #{task_id}: {task_title}
 
 You previously worked on this task and moved it to Review. User has a follow-up question.
@@ -218,7 +248,7 @@ You previously worked on this task and moved it to Review. User has a follow-up 
 
 Respond now.
 """
-    
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
@@ -227,17 +257,15 @@ Respond now.
                     "agentId": agent_id,
                     "task": followup_prompt,
                     "label": f"task-{task_id}-followup",
-                    "cleanup": "keep"
-                }
+                    "cleanup": "keep",
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
             result = response.json() if response.status_code == 200 else None
             if result and result.get("ok"):
@@ -260,34 +288,40 @@ def set_task_session(task_id: int, session_key: Optional[str]):
     with get_db() as conn:
         conn.execute(
             "UPDATE tasks SET agent_session_key = ?, updated_at = ? WHERE id = ?",
-            (session_key, datetime.now().isoformat(), task_id)
+            (session_key, datetime.now().isoformat(), task_id),
         )
         conn.commit()
 
 
-async def spawn_mentioned_agent(task_id: int, task_title: str, task_description: str, 
-                                 mentioned_agent: str, mentioner: str, comment_content: str,
-                                 previous_context: str = ""):
+async def spawn_mentioned_agent(
+    task_id: int,
+    task_title: str,
+    task_description: str,
+    mentioned_agent: str,
+    mentioner: str,
+    comment_content: str,
+    previous_context: str = "",
+):
     """Spawn a session for an @mentioned agent to contribute to a task they don't own.
-    
+
     For the main agent (Jarvis), sends to main session instead of spawning.
     """
     if not OPENCLAW_ENABLED:
         return None
-    
+
     agent_id = AGENT_TO_OPENCLAW_ID.get(mentioned_agent)
     if not agent_id:
         return None
-    
+
     # All agents (including main) now spawn subagent sessions
     system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id, "")
-    
+
     mention_prompt = f"""# You've Been Tagged: Task #{task_id}
 
 **{mentioner}** mentioned you on a task and needs your input.
 
 ## Task: {task_title}
-{task_description or '(No description)'}
+{task_description or "(No description)"}
 
 ## What {mentioner} Said:
 {comment_content}
@@ -311,7 +345,7 @@ Do NOT move the task to a different status — that's the owner's job.
 
 Respond now with your assessment.
 """
-    
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             payload = {
@@ -320,33 +354,31 @@ Respond now with your assessment.
                     "agentId": agent_id,
                     "task": mention_prompt,
                     "label": f"task-{task_id}-mention-{agent_id}",
-                    "cleanup": "delete"  # Cleanup after since they're just dropping in
-                }
+                    "cleanup": "delete",  # Cleanup after since they're just dropping in
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
             result = response.json() if response.status_code == 200 else None
             if result and result.get("ok"):
                 spawn_info = result.get("result", {})
-                session_key = spawn_info.get("childSessionKey", "unknown")
-                
+                _session_key = spawn_info.get("childSessionKey", "unknown")  # noqa: F841
+
                 # Post system comment about the spawn
                 async with httpx.AsyncClient(timeout=5.0) as comment_client:
                     await comment_client.post(
                         f"http://localhost:8080/api/tasks/{task_id}/comments",
                         json={
                             "agent": "System",
-                            "content": f"📢 **{mentioned_agent}** was tagged by {mentioner} and is now reviewing this task."
-                        }
+                            "content": f"📢 **{mentioned_agent}** was tagged by {mentioner} and is now reviewing this task.",
+                        },
                     )
-                
+
                 print(f"✅ Spawned {mentioned_agent} for mention on task #{task_id}")
                 return result
             else:
@@ -355,6 +387,7 @@ Respond now with your assessment.
     except Exception as e:
         print(f"❌ Failed to spawn mentioned agent: {e}")
         return None
+
 
 # Guardrails to inject into every sub-agent task
 AGENT_GUARDRAILS = f"""
@@ -421,7 +454,6 @@ Your focus:
 
 Project: {PROJECT_NAME}
 You're the hands-on executor. When assigned a task, dig in and get it done.""",
-
     "architect": f"""You are the Architect for {COMPANY_NAME}.
 
 Your focus:
@@ -433,7 +465,6 @@ Your focus:
 
 Project: {PROJECT_NAME}
 Be concise. Flag concerns with severity (CRITICAL/HIGH/MEDIUM/LOW).""",
-
     "security-auditor": f"""You are the Security Auditor for {COMPANY_NAME}.
 
 Your focus:
@@ -446,7 +477,6 @@ Your focus:
 
 NON-NEGOTIABLE: Security over convenience. Always.
 Rate findings: CRITICAL (blocks deploy) / HIGH / MEDIUM / LOW""",
-
     "code-reviewer": f"""You are the Code Reviewer for {COMPANY_NAME}.
 
 Your focus:
@@ -459,7 +489,6 @@ Your focus:
 
 Project: {PROJECT_NAME}
 Format: MUST FIX / SHOULD FIX / CONSIDER / NICE TO HAVE""",
-
     "ux-manager": f"""You are the UX Manager for {COMPANY_NAME}.
 
 Your focus:
@@ -483,19 +512,22 @@ ALLOWED URLs (localhost only):
 - http://localhost:* (any port)
 - http://127.0.0.1:*
 
-DO NOT navigate to any external URLs. Your browser access is strictly for reviewing the local app."""
+DO NOT navigate to any external URLs. Your browser access is strictly for reviewing the local app.""",
 }
 
-async def spawn_agent_session(task_id: int, task_title: str, task_description: str, agent_name: str):
+
+async def spawn_agent_session(
+    task_id: int, task_title: str, task_description: str, agent_name: str
+):
     """Spawn a OPENCLAW sub-agent session for a task via tools/invoke API."""
     if not OPENCLAW_ENABLED:
         return None
-    
+
     agent_id = AGENT_TO_OPENCLAW_ID.get(agent_name)
     if not agent_id:
         return None  # Don't spawn for unknown agents
     # Note: Main agent (Jarvis) CAN spawn subagents now - no special case
-    
+
     # Build the task prompt with guardrails
     system_prompt = AGENT_SYSTEM_PROMPTS.get(agent_id, "")
     task_prompt = f"""# Task Assignment from RIZQ Task Board (Approved by {HUMAN_SUPERVISOR_LABEL})
@@ -503,7 +535,7 @@ async def spawn_agent_session(task_id: int, task_title: str, task_description: s
 **Task #{task_id}:** {task_title}
 
 **Description:**
-{task_description or 'No description provided.'}
+{task_description or "No description provided."}
 
 {AGENT_GUARDRAILS}
 
@@ -526,7 +558,7 @@ Your session will automatically end when User marks the task as Done.
 
 Begin now.
 """
-    
+
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
             # Use OPENCLAW's tools/invoke API to spawn sub-agent directly
@@ -536,17 +568,15 @@ Begin now.
                     "agentId": agent_id,
                     "task": task_prompt,
                     "label": f"task-{task_id}",
-                    "cleanup": "keep"
-                }
+                    "cleanup": "keep",
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
             result = response.json() if response.status_code == 200 else None
             if result and result.get("ok"):
@@ -555,18 +585,18 @@ Begin now.
                 spawn_info = result.get("result", {})
                 run_id = spawn_info.get("runId", "unknown")
                 session_key = spawn_info.get("childSessionKey", None)
-                
+
                 # Save session key to database for follow-up messages
                 if session_key:
                     set_task_session(task_id, session_key)
-                
+
                 async with httpx.AsyncClient(timeout=5.0) as comment_client:
                     await comment_client.post(
                         f"http://localhost:8080/api/tasks/{task_id}/comments",
                         json={
                             "agent": "System",
-                            "content": f"🤖 **{agent_name}** agent spawned automatically.\n\nSession: `{session_key or 'unknown'}`\nRun ID: `{run_id}`\n\n💬 *Reply to this task and the agent will respond.*"
-                        }
+                            "content": f"🤖 **{agent_name}** agent spawned automatically.\n\nSession: `{session_key or 'unknown'}`\nRun ID: `{run_id}`\n\n💬 *Reply to this task and the agent will respond.*",
+                        },
                     )
                 return result
             else:
@@ -576,38 +606,42 @@ Begin now.
         print(f"❌ Failed to spawn agent session: {e}")
         return None
 
+
 # =============================================================================
 # WEBSOCKET MANAGER
 # =============================================================================
 
+
 class ConnectionManager:
     """Manage WebSocket connections for live updates."""
-    
+
     def __init__(self):
         self.active_connections: Set[WebSocket] = set()
-    
+
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
         self.active_connections.add(websocket)
-    
+
     def disconnect(self, websocket: WebSocket):
         self.active_connections.discard(websocket)
-    
+
     async def broadcast(self, message: dict):
         """Send update to all connected clients."""
         dead = set()
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except:
+            except Exception:
                 dead.add(connection)
         self.active_connections -= dead
+
 
 manager = ConnectionManager()
 
 # =============================================================================
 # DATABASE
 # =============================================================================
+
 
 def init_db():
     """Initialize the database."""
@@ -661,20 +695,20 @@ def init_db():
         # Add working_agent column if it doesn't exist
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN working_agent TEXT DEFAULT NULL")
-        except:
+        except sqlite3.OperationalError:
             pass  # Column already exists
         # Add agent_session_key column for persistent agent sessions
         try:
             conn.execute("ALTER TABLE tasks ADD COLUMN agent_session_key TEXT DEFAULT NULL")
-        except:
+        except sqlite3.OperationalError:
             pass  # Column already exists
-        
+
         # Add archived column to action_items
         try:
             conn.execute("ALTER TABLE action_items ADD COLUMN archived INTEGER DEFAULT 0")
-        except:
+        except sqlite3.OperationalError:
             pass  # Column already exists
-        
+
         # Chat messages table for persistent command bar history
         conn.execute("""
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -689,9 +723,9 @@ def init_db():
         # Add session_key column if upgrading from older schema
         try:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN session_key TEXT DEFAULT 'main'")
-        except:
+        except sqlite3.OperationalError:
             pass  # Column already exists
-        
+
         # Deleted sessions table - to filter out from dropdown
         conn.execute("""
             CREATE TABLE IF NOT EXISTS deleted_sessions (
@@ -700,6 +734,7 @@ def init_db():
             )
         """)
         conn.commit()
+
 
 @contextmanager
 def get_db():
@@ -711,18 +746,21 @@ def get_db():
     finally:
         conn.close()
 
+
 def log_activity(task_id: int, action: str, agent: str = None, details: str = None):
     """Log an activity."""
     with get_db() as conn:
         conn.execute(
             "INSERT INTO activity_log (task_id, action, agent, details, timestamp) VALUES (?, ?, ?, ?, ?)",
-            (task_id, action, agent, details, datetime.now().isoformat())
+            (task_id, action, agent, details, datetime.now().isoformat()),
         )
         conn.commit()
+
 
 # =============================================================================
 # MODELS
 # =============================================================================
+
 
 class TaskCreate(BaseModel):
     title: str
@@ -735,6 +773,7 @@ class TaskCreate(BaseModel):
     source_file: Optional[str] = None
     source_ref: Optional[str] = None
 
+
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -744,6 +783,7 @@ class TaskUpdate(BaseModel):
     due_date: Optional[str] = None
     source_file: Optional[str] = None
     source_ref: Optional[str] = None
+
 
 class Task(BaseModel):
     id: int
@@ -759,6 +799,7 @@ class Task(BaseModel):
     source_file: Optional[str] = None
     source_ref: Optional[str] = None
     working_agent: Optional[str] = None
+
 
 # =============================================================================
 # APP
@@ -782,23 +823,28 @@ app.add_middleware(
     allow_headers=["Authorization", "X-API-Key", "Content-Type"],
 )
 
+
 # Initialize DB on startup
 @app.on_event("startup")
 def startup():
     init_db()
 
+
 # Serve static files
 STATIC_PATH.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
+
 
 @app.get("/")
 def read_root():
     """Serve the Kanban UI."""
     return FileResponse(STATIC_PATH / "index.html")
 
+
 # =============================================================================
 # WEBSOCKET ENDPOINT
 # =============================================================================
+
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -814,9 +860,11 @@ async def websocket_endpoint(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
 
+
 # =============================================================================
 # CONFIG ENDPOINTS
 # =============================================================================
+
 
 @app.get("/api/config")
 def get_config():
@@ -831,12 +879,14 @@ def get_config():
             "humanName": HUMAN_NAME,
             "humanSupervisorLabel": HUMAN_SUPERVISOR_LABEL,
             "boardTitle": BOARD_TITLE,
-        }
+        },
     }
+
 
 # =============================================================================
 # TASK ENDPOINTS
 # =============================================================================
+
 
 @app.get("/api/tasks", response_model=List[Task])
 def list_tasks(board: str = "tasks", agent: str = None, status: str = None):
@@ -844,18 +894,19 @@ def list_tasks(board: str = "tasks", agent: str = None, status: str = None):
     with get_db() as conn:
         query = "SELECT * FROM tasks WHERE board = ?"
         params = [board]
-        
+
         if agent:
             query += " AND agent = ?"
             params.append(agent)
         if status:
             query += " AND status = ?"
             params.append(status)
-        
+
         query += " ORDER BY CASE priority WHEN 'Critical' THEN 1 WHEN 'High' THEN 2 WHEN 'Medium' THEN 3 ELSE 4 END, created_at DESC"
-        
+
         rows = conn.execute(query, params).fetchall()
         return [dict(row) for row in rows]
+
 
 @app.get("/api/tasks/{task_id}", response_model=Task)
 def get_task(task_id: int):
@@ -866,6 +917,7 @@ def get_task(task_id: int):
             raise HTTPException(status_code=404, detail="Task not found")
         return dict(row)
 
+
 @app.post("/api/tasks", response_model=Task)
 async def create_task(task: TaskCreate):
     """Create a new task."""
@@ -874,18 +926,31 @@ async def create_task(task: TaskCreate):
         cursor = conn.execute(
             """INSERT INTO tasks (title, description, status, priority, agent, due_date, created_at, updated_at, board, source_file, source_ref)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (task.title, task.description, task.status, task.priority, task.agent, task.due_date, now, now, task.board, task.source_file, task.source_ref)
+            (
+                task.title,
+                task.description,
+                task.status,
+                task.priority,
+                task.agent,
+                task.due_date,
+                now,
+                now,
+                task.board,
+                task.source_file,
+                task.source_ref,
+            ),
         )
         conn.commit()
         task_id = cursor.lastrowid
         log_activity(task_id, "created", task.agent, f"Created: {task.title}")
-        
+
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         result = dict(row)
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "task_created", "task": result})
     return result
+
 
 @app.patch("/api/tasks/{task_id}", response_model=Task)
 async def update_task(task_id: int, updates: TaskUpdate):
@@ -895,37 +960,52 @@ async def update_task(task_id: int, updates: TaskUpdate):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         current = dict(row)
         changes = []
-        
+
         # Build update
         update_fields = []
         params = []
-        
-        for field in ["title", "description", "status", "priority", "agent", "due_date", "source_file", "source_ref"]:
+
+        for field in [
+            "title",
+            "description",
+            "status",
+            "priority",
+            "agent",
+            "due_date",
+            "source_file",
+            "source_ref",
+        ]:
             new_value = getattr(updates, field)
             if new_value is not None and new_value != current[field]:
                 update_fields.append(f"{field} = ?")
                 params.append(new_value)
                 changes.append(f"{field}: {current[field]} → {new_value}")
-        
+
         if update_fields:
             update_fields.append("updated_at = ?")
             params.append(datetime.now().isoformat())
             params.append(task_id)
-            
+
             conn.execute(f"UPDATE tasks SET {', '.join(update_fields)} WHERE id = ?", params)
             conn.commit()
-            
-            log_activity(task_id, "updated", updates.agent or current["agent"], "; ".join(changes))
-        
+
+            log_activity(
+                task_id,
+                "updated",
+                updates.agent or current["agent"],
+                "; ".join(changes),
+            )
+
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         result = dict(row)
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "task_updated", "task": result})
     return result
+
 
 @app.delete("/api/tasks/{task_id}")
 async def delete_task(task_id: int):
@@ -934,18 +1014,20 @@ async def delete_task(task_id: int):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         conn.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
         conn.commit()
         log_activity(task_id, "deleted", None, f"Deleted: {row['title']}")
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "task_deleted", "task_id": task_id})
     return {"status": "deleted", "id": task_id}
 
+
 # =============================================================================
 # AGENT ENDPOINTS
 # =============================================================================
+
 
 @app.get("/api/agents/{agent}/tasks")
 def get_agent_tasks(agent: str):
@@ -953,13 +1035,15 @@ def get_agent_tasks(agent: str):
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM tasks WHERE agent = ? AND status NOT IN ('Done', 'Blocked') ORDER BY priority, created_at",
-            (agent,)
+            (agent,),
         ).fetchall()
         return [dict(row) for row in rows]
+
 
 # =============================================================================
 # WORK STATUS (AI Activity Indicator)
 # =============================================================================
+
 
 @app.post("/api/tasks/{task_id}/start-work")
 async def start_work(task_id: int, agent: str):
@@ -968,18 +1052,18 @@ async def start_work(task_id: int, agent: str):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         conn.execute(
             "UPDATE tasks SET working_agent = ?, updated_at = ? WHERE id = ?",
-            (agent, datetime.now().isoformat(), task_id)
+            (agent, datetime.now().isoformat(), task_id),
         )
         conn.commit()
-        
-        row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
-        result = dict(row)
-    
+
+        conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
     await manager.broadcast({"type": "work_started", "task_id": task_id, "agent": agent})
     return {"status": "working", "task_id": task_id, "agent": agent}
+
 
 @app.post("/api/tasks/{task_id}/stop-work")
 async def stop_work(task_id: int, agent: str = None):
@@ -988,83 +1072,97 @@ async def stop_work(task_id: int, agent: str = None):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         conn.execute(
             "UPDATE tasks SET working_agent = NULL, updated_at = ? WHERE id = ?",
-            (datetime.now().isoformat(), task_id)
+            (datetime.now().isoformat(), task_id),
         )
         conn.commit()
-    
+
     await manager.broadcast({"type": "work_stopped", "task_id": task_id})
     return {"status": "stopped", "task_id": task_id}
+
 
 class MoveRequest(BaseModel):
     status: str
     agent: str = None
     reason: str = None  # Required for Review/Blocked transitions
 
+
 @app.post("/api/tasks/{task_id}/move")
 async def move_task(task_id: int, status: str = None, agent: str = None, reason: str = None):
     """Quick move task to a new status with workflow rules."""
     now = datetime.now().isoformat()
-    
+
     with get_db() as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         task = dict(row)
         old_status = task["status"]
-        
+
         # RULE: Only User (human) can move to Done
         if status == "Done" and agent != "User":
             raise HTTPException(status_code=403, detail="Only User can move tasks to Done")
-        
+
         # Update status
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?",
-            (status, now, task_id)
+            (status, now, task_id),
         )
         conn.commit()
         log_activity(task_id, "moved", agent, f"Moved to {status}")
-        
+
         # AUTO-CREATE ACTION ITEMS based on transition
         action_item = None
-        
+
         # Moving to Review → create completion action item
         if status == "Review" and old_status != "Review":
             content = reason or f"Ready for review: {task['title']}"
             cursor = conn.execute(
                 "INSERT INTO action_items (task_id, agent, content, item_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                (task_id, agent or task["agent"], content, "completion", now)
+                (task_id, agent or task["agent"], content, "completion", now),
             )
             conn.commit()
             action_item = {
-                "id": cursor.lastrowid, "task_id": task_id, "agent": agent or task["agent"],
-                "content": content, "item_type": "completion", "resolved": 0, "created_at": now
+                "id": cursor.lastrowid,
+                "task_id": task_id,
+                "agent": agent or task["agent"],
+                "content": content,
+                "item_type": "completion",
+                "resolved": 0,
+                "created_at": now,
             }
-        
+
         # Moving to Blocked → create blocker action item
         if status == "Blocked" and old_status != "Blocked":
             content = reason or f"Blocked: {task['title']} - reason not specified"
             cursor = conn.execute(
                 "INSERT INTO action_items (task_id, agent, content, item_type, created_at) VALUES (?, ?, ?, ?, ?)",
-                (task_id, agent or task["agent"], content, "blocker", now)
+                (task_id, agent or task["agent"], content, "blocker", now),
             )
             conn.commit()
             action_item = {
-                "id": cursor.lastrowid, "task_id": task_id, "agent": agent or task["agent"],
-                "content": content, "item_type": "blocker", "resolved": 0, "created_at": now
+                "id": cursor.lastrowid,
+                "task_id": task_id,
+                "agent": agent or task["agent"],
+                "content": content,
+                "item_type": "blocker",
+                "resolved": 0,
+                "created_at": now,
             }
-        
+
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         result = dict(row)
-    
+
     # Broadcast updates
     await manager.broadcast({"type": "task_updated", "task": result})
     if action_item:
-        await manager.broadcast({"type": "action_item_added", "task_id": task_id, "item": action_item})
-    
+        await manager.broadcast(
+            {"type": "action_item_added", "task_id": task_id, "item": action_item}
+        )
+
     # AUTO-SPAWN: When moving to In Progress, spawn the assigned agent's session
     spawned = False
     if status == "In Progress" and old_status != "In Progress":
@@ -1074,56 +1172,64 @@ async def move_task(task_id: int, status: str = None, agent: str = None, reason:
                 task_id=task_id,
                 task_title=result["title"],
                 task_description=result.get("description", ""),
-                agent_name=assigned_agent
+                agent_name=assigned_agent,
             )
             spawned = True
-    
+
     # CLEANUP: When moving to Done, clear the agent session AND working indicator
     session_cleared = False
     if status == "Done":
         # Always clear working_agent when task is Done
         with get_db() as conn:
-            conn.execute(
-                "UPDATE tasks SET working_agent = NULL WHERE id = ?",
-                (task_id,)
-            )
+            conn.execute("UPDATE tasks SET working_agent = NULL WHERE id = ?", (task_id,))
             conn.commit()
         await manager.broadcast({"type": "work_stopped", "task_id": task_id})
-        
+
         session_key = get_task_session(task_id)
         if session_key:
             # Notify the agent that the task is complete
-            await send_to_agent_session(session_key, 
-                f"✅ **Task #{task_id} marked as Done by User.**\n\nYour work is complete. This session will now end. Thank you!")
+            await send_to_agent_session(
+                session_key,
+                f"✅ **Task #{task_id} marked as Done by User.**\n\nYour work is complete. This session will now end. Thank you!",
+            )
             # Clear the session from the database
             set_task_session(task_id, None)
             session_cleared = True
             print(f"🧹 Cleared agent session for task #{task_id}")
-    
-    return {"status": "moved", "new_status": status, "action_item_created": action_item is not None, "agent_spawned": spawned, "session_cleared": session_cleared}
+
+    return {
+        "status": "moved",
+        "new_status": status,
+        "action_item_created": action_item is not None,
+        "agent_spawned": spawned,
+        "session_cleared": session_cleared,
+    }
+
 
 # =============================================================================
 # COMMENTS
 # =============================================================================
 
+
 class CommentCreate(BaseModel):
     agent: str
     content: str
-    
-    @field_validator('content')
+
+    @field_validator("content")
     @classmethod
     def validate_content_size(cls, v):
         # Limit content to 10MB (base64 images can be large)
         if len(v) > MAX_ATTACHMENT_SIZE_BYTES:
-            raise ValueError(f'Content exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB')
+            raise ValueError(f"Content exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB")
         return v
-    
-    @field_validator('agent')
+
+    @field_validator("agent")
     @classmethod
     def validate_agent(cls, v):
         if len(v) > 100:
-            raise ValueError('Agent name too long')
+            raise ValueError("Agent name too long")
         return v
+
 
 @app.get("/api/tasks/{task_id}/comments")
 def get_comments(task_id: int):
@@ -1131,9 +1237,10 @@ def get_comments(task_id: int):
     with get_db() as conn:
         rows = conn.execute(
             "SELECT * FROM comments WHERE task_id = ? ORDER BY created_at ASC",
-            (task_id,)
+            (task_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
 
 @app.post("/api/tasks/{task_id}/comments")
 async def add_comment(task_id: int, comment: CommentCreate):
@@ -1142,34 +1249,34 @@ async def add_comment(task_id: int, comment: CommentCreate):
     task_title = ""
     task_status = ""
     agent_session = None
-    
+
     with get_db() as conn:
         # Verify task exists
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         task_title = row["title"]
         task_status = row["status"]
         agent_session = row["agent_session_key"] if "agent_session_key" in row.keys() else None
-        
+
         cursor = conn.execute(
             "INSERT INTO comments (task_id, agent, content, created_at) VALUES (?, ?, ?, ?)",
-            (task_id, comment.agent, comment.content, now)
+            (task_id, comment.agent, comment.content, now),
         )
         conn.commit()
-        
+
         result = {
             "id": cursor.lastrowid,
             "task_id": task_id,
             "agent": comment.agent,
             "content": comment.content,
-            "created_at": now
+            "created_at": now,
         }
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "comment_added", "task_id": task_id, "comment": result})
-    
+
     # Check for @mentions in the comment and spawn mentioned agents
     mentions = MENTION_PATTERN.findall(comment.content)
     if mentions:
@@ -1177,17 +1284,21 @@ async def add_comment(task_id: int, comment: CommentCreate):
         task_description = ""
         previous_context = ""
         with get_db() as conn:
-            task_row = conn.execute("SELECT description FROM tasks WHERE id = ?", (task_id,)).fetchone()
+            task_row = conn.execute(
+                "SELECT description FROM tasks WHERE id = ?", (task_id,)
+            ).fetchone()
             task_description = task_row["description"] if task_row else ""
-            
+
             # Get last few comments for context (excluding the one that just triggered this)
             comment_rows = conn.execute(
                 "SELECT agent, content FROM comments WHERE task_id = ? AND id != ? ORDER BY created_at DESC LIMIT 5",
-                (task_id, result["id"])
+                (task_id, result["id"]),
             ).fetchall()
             if comment_rows:
-                previous_context = "\n".join([f"**{r['agent']}:** {r['content'][:500]}" for r in reversed(comment_rows)])
-        
+                previous_context = "\n".join(
+                    [f"**{r['agent']}:** {r['content'][:500]}" for r in reversed(comment_rows)]
+                )
+
         for mentioned_agent in set(mentions):  # dedupe mentions
             # Normalize case to match AGENT_TO_OPENCLAW_ID keys
             matched_agent = None
@@ -1195,7 +1306,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
                 if agent_name.lower() == mentioned_agent.lower():
                     matched_agent = agent_name
                     break
-            
+
             if matched_agent and matched_agent != comment.agent:  # Don't spawn self
                 agent_id = AGENT_TO_OPENCLAW_ID.get(matched_agent)
                 if agent_id:  # All agents including main can be spawned now
@@ -1207,29 +1318,33 @@ async def add_comment(task_id: int, comment: CommentCreate):
                         mentioned_agent=matched_agent,
                         mentioner=comment.agent,
                         comment_content=comment.content,
-                        previous_context=previous_context
+                        previous_context=previous_context,
                     )
                     print(f"📢 Spawned {matched_agent} for mention in task #{task_id}")
-    
+
     # If this is from User and task is active, try to reach the agent
     if comment.agent == "User" and task_status in ["In Progress", "Review"]:
         # Get the assigned agent for this task
         with get_db() as conn:
             row = conn.execute("SELECT agent FROM tasks WHERE id = ?", (task_id,)).fetchone()
             assigned_agent = row["agent"] if row else None
-        
+
         if assigned_agent and assigned_agent in AGENT_TO_OPENCLAW_ID and assigned_agent != "User":
             # Get previous conversation context (last few comments)
             previous_comments = []
             with get_db() as conn:
                 rows = conn.execute(
                     "SELECT agent, content FROM comments WHERE task_id = ? ORDER BY created_at DESC LIMIT 5",
-                    (task_id,)
+                    (task_id,),
                 ).fetchall()
-                previous_comments = [{"agent": r["agent"], "content": r["content"][:500]} for r in reversed(rows)]
-            
-            context = "\n".join([f"**{c['agent']}:** {c['content']}" for c in previous_comments[:-1]])  # Exclude current comment
-            
+                previous_comments = [
+                    {"agent": r["agent"], "content": r["content"][:500]} for r in reversed(rows)
+                ]
+
+            context = "\n".join(
+                [f"**{c['agent']}:** {c['content']}" for c in previous_comments[:-1]]
+            )  # Exclude current comment
+
             # Try to send to existing session first
             sent = False
             if agent_session:
@@ -1240,7 +1355,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
 ---
 Respond by posting a comment to the task."""
                 sent = await send_to_agent_session(agent_session, message)
-            
+
             if not sent:
                 # Session ended - spawn a new one with context
                 print(f"🔄 Session ended, spawning follow-up for task #{task_id}")
@@ -1249,23 +1364,26 @@ Respond by posting a comment to the task."""
                     task_title=task_title,
                     agent_name=assigned_agent,
                     previous_context=context,
-                    new_message=comment.content
+                    new_message=comment.content,
                 )
     elif comment.agent not in ["System", "User"] + list(AGENT_TO_OPENCLAW_ID.keys()):
         # Notify OPENCLAW for other comments
         await notify_OPENCLAW(task_id, task_title, comment.agent, comment.content)
-    
+
     return result
+
 
 # =============================================================================
 # ACTION ITEMS (Questions, Notifications, Blockers)
 # =============================================================================
+
 
 class ActionItemCreate(BaseModel):
     agent: str
     content: str
     item_type: str = "question"  # question, completion, blocker
     comment_id: Optional[int] = None
+
 
 @app.get("/api/tasks/{task_id}/action-items")
 def get_action_items(task_id: int, resolved: bool = False, archived: bool = False):
@@ -1275,15 +1393,16 @@ def get_action_items(task_id: int, resolved: bool = False, archived: bool = Fals
             # Only return archived items
             rows = conn.execute(
                 "SELECT * FROM action_items WHERE task_id = ? AND archived = 1 ORDER BY created_at ASC",
-                (task_id,)
+                (task_id,),
             ).fetchall()
         else:
             # Return non-archived items filtered by resolved status
             rows = conn.execute(
                 "SELECT * FROM action_items WHERE task_id = ? AND resolved = ? AND archived = 0 ORDER BY created_at ASC",
-                (task_id, 1 if resolved else 0)
+                (task_id, 1 if resolved else 0),
             ).fetchall()
         return [dict(row) for row in rows]
+
 
 @app.post("/api/tasks/{task_id}/action-items")
 async def add_action_item(task_id: int, item: ActionItemCreate):
@@ -1294,13 +1413,13 @@ async def add_action_item(task_id: int, item: ActionItemCreate):
         row = conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Task not found")
-        
+
         cursor = conn.execute(
             "INSERT INTO action_items (task_id, comment_id, agent, content, item_type, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (task_id, item.comment_id, item.agent, item.content, item.item_type, now)
+            (task_id, item.comment_id, item.agent, item.content, item.item_type, now),
         )
         conn.commit()
-        
+
         result = {
             "id": cursor.lastrowid,
             "task_id": task_id,
@@ -1310,13 +1429,14 @@ async def add_action_item(task_id: int, item: ActionItemCreate):
             "item_type": item.item_type,
             "resolved": 0,
             "created_at": now,
-            "resolved_at": None
+            "resolved_at": None,
         }
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "action_item_added", "task_id": task_id, "item": result})
-    
+
     return result
+
 
 @app.post("/api/action-items/{item_id}/resolve")
 async def resolve_action_item(item_id: int):
@@ -1326,18 +1446,20 @@ async def resolve_action_item(item_id: int):
         row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
-        
+
         conn.execute(
             "UPDATE action_items SET resolved = 1, resolved_at = ? WHERE id = ?",
-            (now, item_id)
+            (now, item_id),
         )
         conn.commit()
-        
+
         task_id = row["task_id"]
-    
+
     # Broadcast to all clients
-    await manager.broadcast({"type": "action_item_resolved", "task_id": task_id, "item_id": item_id})
-    
+    await manager.broadcast(
+        {"type": "action_item_resolved", "task_id": task_id, "item_id": item_id}
+    )
+
     return {"success": True, "item_id": item_id}
 
 
@@ -1348,41 +1470,41 @@ async def unresolve_action_item(item_id: int):
         row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
-        
+
         conn.execute(
             "UPDATE action_items SET resolved = 0, resolved_at = NULL WHERE id = ?",
-            (item_id,)
+            (item_id,),
         )
         conn.commit()
-        
+
         task_id = row["task_id"]
-    
+
     # Broadcast to all clients
-    await manager.broadcast({"type": "action_item_unresolved", "task_id": task_id, "item_id": item_id})
-    
+    await manager.broadcast(
+        {"type": "action_item_unresolved", "task_id": task_id, "item_id": item_id}
+    )
+
     return {"success": True, "item_id": item_id}
 
 
 @app.post("/api/action-items/{item_id}/archive")
 async def archive_action_item(item_id: int):
     """Archive a resolved action item to hide it from main view."""
-    now = datetime.now().isoformat()
     with get_db() as conn:
         row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
-        
-        conn.execute(
-            "UPDATE action_items SET archived = 1 WHERE id = ?",
-            (item_id,)
-        )
+
+        conn.execute("UPDATE action_items SET archived = 1 WHERE id = ?", (item_id,))
         conn.commit()
-        
+
         task_id = row["task_id"]
-    
+
     # Broadcast to all clients
-    await manager.broadcast({"type": "action_item_archived", "task_id": task_id, "item_id": item_id})
-    
+    await manager.broadcast(
+        {"type": "action_item_archived", "task_id": task_id, "item_id": item_id}
+    )
+
     return {"success": True, "item_id": item_id}
 
 
@@ -1393,19 +1515,19 @@ async def unarchive_action_item(item_id: int):
         row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
-        
-        conn.execute(
-            "UPDATE action_items SET archived = 0 WHERE id = ?",
-            (item_id,)
-        )
+
+        conn.execute("UPDATE action_items SET archived = 0 WHERE id = ?", (item_id,))
         conn.commit()
-        
+
         task_id = row["task_id"]
-    
+
     # Broadcast to all clients
-    await manager.broadcast({"type": "action_item_unarchived", "task_id": task_id, "item_id": item_id})
-    
+    await manager.broadcast(
+        {"type": "action_item_unarchived", "task_id": task_id, "item_id": item_id}
+    )
+
     return {"success": True, "item_id": item_id}
+
 
 @app.delete("/api/action-items/{item_id}")
 async def delete_action_item(item_id: int):
@@ -1414,27 +1536,28 @@ async def delete_action_item(item_id: int):
         row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
-        
+
         task_id = row["task_id"]
         conn.execute("DELETE FROM action_items WHERE id = ?", (item_id,))
         conn.commit()
-    
+
     # Broadcast to all clients
     await manager.broadcast({"type": "action_item_deleted", "task_id": task_id, "item_id": item_id})
-    
+
     return {"success": True, "item_id": item_id}
+
 
 # =============================================================================
 # ACTIVITY LOG
 # =============================================================================
+
 
 @app.get("/api/activity")
 def get_activity(limit: int = 50):
     """Get recent activity."""
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT ?",
-            (limit,)
+            "SELECT * FROM activity_log ORDER BY timestamp DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1443,17 +1566,21 @@ def get_activity(limit: int = 50):
 # JARVIS DIRECT CHAT (Command Bar Channel)
 # =============================================================================
 
+
 class JarvisMessage(BaseModel):
     message: str
     session: str = "main"  # Which session to send to
-    attachments: Optional[List[dict]] = None  # [{type: "image/png", data: "base64...", filename: "..."}]
-    
-    @field_validator('message')
+    attachments: Optional[List[dict]] = (
+        None  # [{type: "image/png", data: "base64...", filename: "..."}]
+    )
+
+    @field_validator("message")
     @classmethod
     def validate_message_size(cls, v):
         if len(v) > MAX_ATTACHMENT_SIZE_BYTES:
-            raise ValueError(f'Message exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB')
+            raise ValueError(f"Message exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB")
         return v
+
 
 # Chat history now persisted in SQLite (no more in-memory loss on refresh)
 
@@ -1461,31 +1588,27 @@ class JarvisMessage(BaseModel):
 # OPENCLAW SESSIONS API
 # =============================================================================
 
+
 @app.get("/api/sessions")
 async def list_sessions():
     """Proxy to OpenClaw sessions_list to get active sessions."""
     if not OPENCLAW_ENABLED:
         return {"sessions": [], "error": "OpenClaw integration not enabled"}
-    
+
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             payload = {
                 "tool": "sessions_list",
-                "args": {
-                    "limit": 20,
-                    "messageLimit": 0
-                }
+                "args": {"limit": 20, "messageLimit": 0},
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 if result.get("ok"):
@@ -1498,14 +1621,14 @@ async def list_sessions():
                     else:
                         sessions_data = inner_result
                     sessions = sessions_data.get("sessions", [])
-                    
+
                     # Format for frontend
                     formatted = []
                     for s in sessions:
                         key = s.get("key", "")
                         session_label = s.get("label", "")  # Label from OpenClaw
                         display = s.get("displayName", key)
-                        
+
                         # Use OpenClaw's label
                         if key == "main" or key == "agent:main:main":
                             label = "🛡️ Jarvis (Main)"
@@ -1522,38 +1645,52 @@ async def list_sessions():
                             label = f"🤖 {agent_name.title()}"
                         else:
                             label = display
-                        
-                        formatted.append({
-                            "key": key,
-                            "label": label,
-                            "channel": s.get("channel", ""),
-                            "model": s.get("model", ""),
-                            "updatedAt": s.get("updatedAt", 0)
-                        })
-                    
+
+                        formatted.append(
+                            {
+                                "key": key,
+                                "label": label,
+                                "channel": s.get("channel", ""),
+                                "model": s.get("model", ""),
+                                "updatedAt": s.get("updatedAt", 0),
+                            }
+                        )
+
                     # Filter out deleted sessions and cleanup stale entries
                     openclaw_keys = set(s["key"] for s in formatted)
-                    
+
                     with get_db() as conn:
-                        deleted_rows = conn.execute("SELECT session_key FROM deleted_sessions").fetchall()
+                        deleted_rows = conn.execute(
+                            "SELECT session_key FROM deleted_sessions"
+                        ).fetchall()
                         deleted_keys = set(row["session_key"] for row in deleted_rows)
-                        
+
                         # Cleanup: remove deleted_sessions entries that are no longer in OpenClaw
                         # (OpenClaw has already removed them, so we don't need to track them anymore)
                         orphaned_keys = deleted_keys - openclaw_keys
                         if orphaned_keys:
                             placeholders = ",".join("?" * len(orphaned_keys))
-                            conn.execute(f"DELETE FROM deleted_sessions WHERE session_key IN ({placeholders})", 
-                                        list(orphaned_keys))
+                            conn.execute(
+                                f"DELETE FROM deleted_sessions WHERE session_key IN ({placeholders})",
+                                list(orphaned_keys),
+                            )
                             conn.commit()
-                    
+
                     formatted = [s for s in formatted if s["key"] not in deleted_keys]
-                    
+
                     # Sort: main first, then by updatedAt
-                    formatted.sort(key=lambda x: (0 if "main" in x["key"].lower() else 1, -x.get("updatedAt", 0)))
+                    formatted.sort(
+                        key=lambda x: (
+                            0 if "main" in x["key"].lower() else 1,
+                            -x.get("updatedAt", 0),
+                        )
+                    )
                     return {"sessions": formatted}
-            
-            return {"sessions": [], "error": f"Failed to fetch sessions: {response.status_code}"}
+
+            return {
+                "sessions": [],
+                "error": f"Failed to fetch sessions: {response.status_code}",
+            }
     except Exception as e:
         print(f"Error fetching sessions: {e}")
         return {"sessions": [], "error": str(e)}
@@ -1570,7 +1707,7 @@ async def create_session(req: SessionCreate):
     """Create a new OpenClaw session via sessions_spawn."""
     if not OPENCLAW_ENABLED:
         return {"success": False, "error": "OpenClaw integration not enabled"}
-    
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             payload = {
@@ -1579,24 +1716,22 @@ async def create_session(req: SessionCreate):
                     "agentId": req.agentId,
                     "task": req.task,
                     "label": req.label or f"taskboard-{datetime.now().strftime('%H%M%S')}",
-                    "cleanup": "keep"
-                }
+                    "cleanup": "keep",
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 if result.get("ok"):
                     return {"success": True, "result": result.get("result", {})}
-            
+
             return {"success": False, "error": f"Failed: {response.status_code}"}
     except Exception as e:
         print(f"Error creating session: {e}")
@@ -1608,7 +1743,7 @@ async def stop_session(session_key: str):
     """Stop/abort a running session."""
     if not OPENCLAW_ENABLED:
         return {"success": False, "error": "OpenClaw integration not enabled"}
-    
+
     try:
         # Use the gateway's abort mechanism
         async with httpx.AsyncClient(timeout=10.0) as client:
@@ -1617,32 +1752,31 @@ async def stop_session(session_key: str):
                 "tool": "sessions_send",
                 "args": {
                     "sessionKey": session_key,
-                    "message": "SYSTEM: ABORT - User requested stop from Task Board"
-                }
+                    "message": "SYSTEM: ABORT - User requested stop from Task Board",
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
-            
+
             # First try to send abort message
-            await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
-            )
-            
+            await client.post(f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers)
+
             # Also try the direct abort endpoint if available
             try:
                 abort_response = await client.post(
                     f"{OPENCLAW_GATEWAY_URL}/api/sessions/{session_key}/abort",
-                    headers=headers
+                    headers=headers,
                 )
                 if abort_response.status_code == 200:
-                    return {"success": True, "message": f"Stopped session: {session_key}"}
-            except:
+                    return {
+                        "success": True,
+                        "message": f"Stopped session: {session_key}",
+                    }
+            except Exception:
                 pass
-            
+
             return {"success": True, "message": f"Stop signal sent to: {session_key}"}
     except Exception as e:
         print(f"Error stopping session: {e}")
@@ -1654,27 +1788,25 @@ async def stop_all_sessions():
     """Emergency stop all non-main sessions."""
     if not OPENCLAW_ENABLED:
         return {"success": False, "error": "OpenClaw integration not enabled"}
-    
+
     stopped = []
     errors = []
-    
+
     try:
         # First get all sessions
         async with httpx.AsyncClient(timeout=10.0) as client:
             payload = {
                 "tool": "sessions_list",
-                "args": {"limit": 50, "messageLimit": 0}
+                "args": {"limit": 50, "messageLimit": 0},
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 if result.get("ok"):
@@ -1685,9 +1817,9 @@ async def stop_all_sessions():
                         sessions_data = json.loads(text_content)
                     else:
                         sessions_data = inner_result
-                    
+
                     sessions = sessions_data.get("sessions", [])
-                    
+
                     # Stop each non-main session
                     for s in sessions:
                         key = s.get("key", "")
@@ -1698,14 +1830,14 @@ async def stop_all_sessions():
                                     stopped.append(key)
                                 else:
                                     errors.append(key)
-                            except:
+                            except Exception:
                                 errors.append(key)
-        
+
         return {
             "success": True,
             "stopped": stopped,
             "errors": errors,
-            "message": f"Stopped {len(stopped)} sessions"
+            "message": f"Stopped {len(stopped)} sessions",
         }
     except Exception as e:
         print(f"Error stopping all sessions: {e}")
@@ -1717,21 +1849,21 @@ async def delete_session(session_key: str):
     """Close/delete a session - removes from OpenClaw's session store."""
     if not OPENCLAW_ENABLED:
         return {"success": False, "error": "OpenClaw integration not enabled"}
-    
+
     # Send stop signal first
     await stop_session(session_key)
-    
+
     now = datetime.now().isoformat()
-    
+
     # Clear taskboard's local chat history
     with get_db() as conn:
         conn.execute("DELETE FROM chat_messages WHERE session_key = ?", (session_key,))
         conn.execute(
             "INSERT OR REPLACE INTO deleted_sessions (session_key, deleted_at) VALUES (?, ?)",
-            (session_key, now)
+            (session_key, now),
         )
         conn.commit()
-    
+
     # Delete from OpenClaw's session store
     openclaw_deleted = False
     try:
@@ -1739,49 +1871,56 @@ async def delete_session(session_key: str):
         parts = session_key.split(":")
         if len(parts) >= 2 and parts[0] == "agent":
             agent_id = parts[1]  # e.g., "main"
-            
+
             # Path to OpenClaw session store (use env var if in Docker, fallback to home dir)
             import os
+
             openclaw_home = os.environ.get("OPENCLAW_DATA_PATH", os.path.expanduser("~/.openclaw"))
-            sessions_file = os.path.join(openclaw_home, "agents", agent_id, "sessions", "sessions.json")
-            
+            sessions_file = os.path.join(
+                openclaw_home, "agents", agent_id, "sessions", "sessions.json"
+            )
+
             if os.path.exists(sessions_file):
                 import json
-                with open(sessions_file, 'r', encoding='utf-8') as f:
+
+                with open(sessions_file, "r", encoding="utf-8") as f:
                     sessions_data = json.load(f)
-                
+
                 # Check if session exists and get its sessionId for transcript deletion
                 session_id = None
                 if session_key in sessions_data:
                     session_id = sessions_data[session_key].get("sessionId")
                     del sessions_data[session_key]
-                    
+
                     # Write back
-                    with open(sessions_file, 'w', encoding='utf-8') as f:
+                    with open(sessions_file, "w", encoding="utf-8") as f:
                         json.dump(sessions_data, f, indent=2)
-                    
+
                     openclaw_deleted = True
                     print(f"Deleted session {session_key} from OpenClaw store")
-                    
+
                     # Also delete transcript file if it exists
                     if session_id:
-                        transcript_file = os.path.join(openclaw_home, "agents", agent_id, "sessions", f"{session_id}.jsonl")
+                        transcript_file = os.path.join(
+                            openclaw_home,
+                            "agents",
+                            agent_id,
+                            "sessions",
+                            f"{session_id}.jsonl",
+                        )
                         if os.path.exists(transcript_file):
                             os.remove(transcript_file)
                             print(f"Deleted transcript {transcript_file}")
     except Exception as e:
         print(f"Warning: Could not delete from OpenClaw store: {e}")
-    
+
     # Broadcast session deletion to all clients for real-time UI update
-    await manager.broadcast({
-        "type": "session_deleted",
-        "session_key": session_key
-    })
-    
+    await manager.broadcast({"type": "session_deleted", "session_key": session_key})
+
     return {
-        "success": True, 
+        "success": True,
         "message": f"Deleted session: {session_key}",
-        "openclaw_deleted": openclaw_deleted
+        "openclaw_deleted": openclaw_deleted,
     }
 
 
@@ -1791,7 +1930,7 @@ def get_chat_history(limit: int = 100, session: str = "main"):
     with get_db() as conn:
         rows = conn.execute(
             "SELECT id, session_key, role, content, attachments, created_at FROM chat_messages WHERE session_key = ? ORDER BY id DESC LIMIT ?",
-            (session, limit)
+            (session, limit),
         ).fetchall()
         # Return in chronological order
         messages = []
@@ -1801,31 +1940,32 @@ def get_chat_history(limit: int = 100, session: str = "main"):
                 "session_key": row["session_key"],
                 "role": row["role"],
                 "content": row["content"],
-                "timestamp": row["created_at"]
+                "timestamp": row["created_at"],
             }
             if row["attachments"]:
                 msg["attachments"] = json.loads(row["attachments"])
             messages.append(msg)
         return {"history": messages, "session": session}
 
+
 @app.post("/api/jarvis/chat")
 async def chat_with_jarvis(msg: JarvisMessage):
     """Send a message to Jarvis via sessions_send (synchronous, waits for response)."""
     if not OPENCLAW_ENABLED:
         return {"sent": False, "error": "OpenClaw integration not enabled."}
-    
+
     now = datetime.now().isoformat()
-    
+
     # Build the message content with taskboard context
     message_content = f"System: [TASKBOARD_CHAT] User says: {msg.message}\n\nRespond naturally."
-    
+
     # Include attachment data in the message for the agent to process
     if msg.attachments:
         for att in msg.attachments:
             att_type = att.get("type", "")
             att_data = att.get("data", "")
             att_filename = att.get("filename", "file")
-            
+
             if att_type.startswith("image/") and att_data:
                 # Embed full base64 image data so agent can use image tool
                 message_content += f"\n\n[IMAGE:{att_data}]"
@@ -1834,43 +1974,45 @@ async def chat_with_jarvis(msg: JarvisMessage):
                 if att_data.startswith("data:") and ";base64," in att_data:
                     try:
                         import base64
+
                         # Extract base64 part after the comma
                         b64_content = att_data.split(",", 1)[1]
                         decoded = base64.b64decode(b64_content).decode("utf-8", errors="replace")
-                        message_content += f"\n\n**📎 Attached file: {att_filename}**\n```\n{decoded}\n```"
+                        message_content += (
+                            f"\n\n**📎 Attached file: {att_filename}**\n```\n{decoded}\n```"
+                        )
                     except Exception as e:
-                        message_content += f"\n\n[Attached File: {att_filename} (decode error: {e})]"
+                        message_content += (
+                            f"\n\n[Attached File: {att_filename} (decode error: {e})]"
+                        )
                 else:
                     message_content += f"\n\n[Attached File: {att_filename}]"
-    
+
     # Normalize session key
     session_key = msg.session or "main"
-    
+
     # Store user message in database
     attachments_json = json.dumps(msg.attachments) if msg.attachments else None
     with get_db() as conn:
         cursor = conn.execute(
             "INSERT INTO chat_messages (session_key, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
-            (session_key, "user", msg.message, attachments_json, now)
+            (session_key, "user", msg.message, attachments_json, now),
         )
         conn.commit()
         user_msg_id = cursor.lastrowid
-    
+
     user_msg = {
         "id": user_msg_id,
         "session_key": session_key,
         "role": "user",
         "content": msg.message,
         "timestamp": now,
-        "attachments": msg.attachments
+        "attachments": msg.attachments,
     }
-    
+
     # Broadcast user message to all clients (so other tabs see it)
-    await manager.broadcast({
-        "type": "command_bar_message",
-        "message": user_msg
-    })
-    
+    await manager.broadcast({"type": "command_bar_message", "message": user_msg})
+
     try:
         # Use sessions_send via tools/invoke - this is synchronous and waits for response
         async with httpx.AsyncClient(timeout=120.0) as client:
@@ -1879,113 +2021,117 @@ async def chat_with_jarvis(msg: JarvisMessage):
                 "args": {
                     "message": message_content,
                     "sessionKey": session_key,  # Use selected session
-                    "timeoutSeconds": 90
-                }
+                    "timeoutSeconds": 90,
+                },
             }
             headers = {
                 "Authorization": f"Bearer {OPENCLAW_TOKEN}",
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
             }
-            
+
             response = await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke",
-                json=payload,
-                headers=headers
+                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
-                
+
                 # /tools/invoke returns { ok: true, result: { content, details: { reply, ... } } }
                 inner = result.get("result", {})
-                
+
                 if isinstance(inner, dict):
                     # Response is in inner.details.reply
                     details = inner.get("details", {})
-                    assistant_reply = details.get("reply") or inner.get("reply") or inner.get("response")
+                    assistant_reply = (
+                        details.get("reply") or inner.get("reply") or inner.get("response")
+                    )
                 else:
                     assistant_reply = str(inner) if inner else None
-                
+
                 # Ensure it's a string
                 if assistant_reply and not isinstance(assistant_reply, str):
                     import json as json_module
-                    assistant_reply = json_module.dumps(assistant_reply) if isinstance(assistant_reply, (dict, list)) else str(assistant_reply)
-                
+
+                    assistant_reply = (
+                        json_module.dumps(assistant_reply)
+                        if isinstance(assistant_reply, (dict, list))
+                        else str(assistant_reply)
+                    )
+
                 if assistant_reply:
                     # Store the response in database
                     with get_db() as conn:
-                        cursor = conn.execute(
+                        conn.execute(
                             "INSERT INTO chat_messages (session_key, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
-                            (session_key, "assistant", assistant_reply, None, now)
+                            (session_key, "assistant", assistant_reply, None, now),
                         )
                         conn.commit()
-                        assistant_msg_id = cursor.lastrowid
-                    
-                    jarvis_msg = {
-                        "id": assistant_msg_id,
-                        "session_key": session_key,
-                        "role": "assistant", 
-                        "content": assistant_reply,
-                        "timestamp": datetime.now().isoformat()
-                    }
+
                     # Return response directly - frontend adds to history from HTTP response
-                    return {"sent": True, "response": assistant_reply, "session": session_key}
-                
+                    return {
+                        "sent": True,
+                        "response": assistant_reply,
+                        "session": session_key,
+                    }
+
                 return {"sent": True, "response": "No response received"}
             else:
-                error_text = response.text[:200] if response.text else f"HTTP {response.status_code}"
+                error_text = (
+                    response.text[:200] if response.text else f"HTTP {response.status_code}"
+                )
                 return {"sent": False, "error": error_text}
-                
+
     except Exception as e:
         print(f"Error sending to Jarvis: {e}")
         return {"sent": False, "error": str(e)}
 
+
 class JarvisResponse(BaseModel):
     response: str
     session: str = "main"  # Which session this response is for
-    
-    @field_validator('response')
+
+    @field_validator("response")
     @classmethod
     def validate_response_size(cls, v):
         if len(v) > 1024 * 1024:  # 1MB limit for responses
-            raise ValueError('Response too large')
+            raise ValueError("Response too large")
         return v
+
 
 @app.post("/api/jarvis/respond")
 async def jarvis_respond(msg: JarvisResponse, _: bool = Depends(verify_api_key)):
     """Endpoint for Jarvis to push responses back to the command bar. Requires API key."""
     now = datetime.now().isoformat()
     session_key = msg.session or "main"
-    
+
     # Store Jarvis response in database
     with get_db() as conn:
         cursor = conn.execute(
             "INSERT INTO chat_messages (session_key, role, content, attachments, created_at) VALUES (?, ?, ?, ?, ?)",
-            (session_key, "assistant", msg.response, None, now)
+            (session_key, "assistant", msg.response, None, now),
         )
         conn.commit()
         msg_id = cursor.lastrowid
-    
+
     jarvis_msg = {
         "id": msg_id,
         "session_key": session_key,
         "role": "assistant",
         "content": msg.response,
-        "timestamp": now
+        "timestamp": now,
     }
-    
+
     # Broadcast to all connected clients
-    await manager.broadcast({
-        "type": "command_bar_message",
-        "message": jarvis_msg
-    })
+    await manager.broadcast({"type": "command_bar_message", "message": jarvis_msg})
     return {"delivered": True}
+
 
 # Legacy endpoint for backwards compatibility
 @app.post("/api/molt/chat")
 async def chat_with_molt_legacy(msg: JarvisMessage):
     """Legacy endpoint - redirects to /api/jarvis/chat."""
     return await chat_with_jarvis(msg)
+
 
 @app.post("/api/molt/respond")
 async def jarvis_respond_legacy(msg: JarvisResponse, _: bool = Depends(verify_api_key)):
@@ -1995,4 +2141,5 @@ async def jarvis_respond_legacy(msg: JarvisResponse, _: bool = Depends(verify_ap
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=8080)
