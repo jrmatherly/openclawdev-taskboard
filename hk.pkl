@@ -1,79 +1,104 @@
 /// hk.pkl - Git hooks configuration for OpenClaw DEV TaskBoard
-/// Uses ruff for Python linting and formatting
-/// Integrates with mise for tool management
+/// Pattern matched from working enterprise-ai-platform project
 amends "package://github.com/jdx/hk/releases/download/v1.35.0/hk@1.35.0#/Config.pkl"
 import "package://github.com/jdx/hk/releases/download/v1.35.0/hk@1.35.0#/Builtins.pkl"
 
-// Python linters using ruff (fast Python linter/formatter)
+// ============================================
+// Python Linters - explicit commands (not Builtins)
+// ============================================
 local python_linters = new Mapping<String, Step> {
-    // Ruff linting - extremely fast Python linter
-    ["ruff"] = (Builtins.ruff) {
-        glob = List("*.py")
-        batch = true
+    // Ruff linting
+    ["ruff"] {
+        glob = "*.py"
+        check = "uv run ruff check {{ files }}"
+        fix = "uv run ruff check --fix {{ files }}"
     }
-    // Ruff formatting - consistent code style
-    ["ruff_format"] = (Builtins.ruff_format) {
-        glob = List("*.py")
-        depends = "ruff"
-    }
-}
-
-// Commit message validators
-local commit_validators = new Mapping<String, Step> {
-    // Conventional commit validation (feat:, fix:, docs:, etc.)
-    ["conventional-commit"] = Builtins.check_conventional_commit
-    // Prevent direct commits to main/master branches
-    ["no-commit-to-main"] = (Builtins.no_commit_to_branch) {
-        env {
-            ["NO_COMMIT_TO_BRANCH_ARGS"] = "main master"
-        }
+    // Ruff formatting
+    ["ruff-format"] {
+        glob = "*.py"
+        check = "uv run ruff format --check {{ files }}"
+        fix = "uv run ruff format {{ files }}"
     }
 }
 
-// File validators for common issues
-local file_validators = new Mapping<String, Step> {
-    // Check for accidentally added large files
-    ["large-files"] = Builtins.check_added_large_files
-    // Detect accidentally committed private keys
-    ["private-keys"] = Builtins.detect_private_key
-    // Fix trailing whitespace in files
-    ["trailing-whitespace"] = Builtins.trailing_whitespace
-    // Ensure files end with a newline
-    ["end-of-file"] = Builtins.newlines
+// ============================================
+// Security & Quality Checks
+// ============================================
+local security_checks = new Mapping<String, Step> {
+    // Prevent accidental secret commits
+    ["detect-private-key"] {
+        glob = "*"
+        check = "hk util detect-private-key {{ files }}"
+    }
+    // Block large files (>500KB)
+    ["large-files"] {
+        glob = "*"
+        check = "hk util check-added-large-files --maxkb 500 {{ files }}"
+    }
     // Check for merge conflict markers
-    ["merge-conflict"] = Builtins.check_merge_conflict
+    ["merge-conflicts"] {
+        glob = "*"
+        check = "hk util check-merge-conflict {{ files }}"
+    }
 }
 
+// ============================================
+// File Hygiene
+// ============================================
+local file_hygiene = new Mapping<String, Step> {
+    // Fix trailing whitespace
+    ["trailing-whitespace"] {
+        glob = "*.{py,json,yaml,yml,md,toml}"
+        check = "hk util trailing-whitespace {{ files }}"
+        fix = "hk util trailing-whitespace --fix {{ files }}"
+    }
+    // End of file fixer
+    ["eof-fixer"] {
+        glob = "*.{py,json,yaml,yml,md,toml}"
+        check = "hk util end-of-file-fixer {{ files }}"
+        fix = "hk util end-of-file-fixer --fix {{ files }}"
+    }
+}
+
+// ============================================
+// Hook Definitions
+// ============================================
 hooks {
-    // Pre-commit hook: runs before each commit
+    // Pre-commit: security + hygiene + linting
     ["pre-commit"] {
-        fix = true           // Run fix commands to auto-correct issues
-        stash = "git"        // Stash unstaged changes before running
+        fix = true
+        stash = "git"
         steps {
-            ...file_validators
+            ...security_checks
+            ...file_hygiene
             ...python_linters
         }
     }
-    // Commit message hook: validates commit message format
+
+    // Commit message validation
     ["commit-msg"] {
-        steps = commit_validators
-    }
-    // Check hook: for running `hk check` manually or in CI
-    ["check"] {
         steps {
-            ...file_validators
-            ...python_linters
+            ["conventional-commit"] {
+                check = "hk util check-conventional-commit {{commit_msg_file}}"
+            }
         }
     }
-    // Fix hook: for running `hk fix` to auto-fix all issues
+
+    // Manual fix command
     ["fix"] {
         fix = true
         steps {
-            ...file_validators
+            ...file_hygiene
+            ...python_linters
+        }
+    }
+
+    // Manual check command (CI-friendly)
+    ["check"] {
+        steps {
+            ...security_checks
+            ...file_hygiene
             ...python_linters
         }
     }
 }
-
-// Fail fast for quicker feedback during development
-fail_fast = true
