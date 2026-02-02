@@ -78,9 +78,7 @@ MENTION_PATTERN = re.compile(
 )
 
 # Security: Load secrets from environment variables
-OPENCLAW_GATEWAY_URL = os.getenv(
-    "OPENCLAW_GATEWAY_URL", "http://host.docker.internal:18789"
-)
+OPENCLAW_GATEWAY_URL = os.getenv("OPENCLAW_GATEWAY_URL", "http://host.docker.internal:18789")
 OPENCLAW_TOKEN = os.getenv("OPENCLAW_TOKEN", "")
 TASKBOARD_API_KEY = os.getenv("TASKBOARD_API_KEY", "")
 OPENCLAW_ENABLED = bool(OPENCLAW_TOKEN)
@@ -149,9 +147,7 @@ def verify_internal_only(request: Request):
     raise HTTPException(status_code=403, detail="Access denied")
 
 
-async def notify_OPENCLAW(
-    task_id: int, task_title: str, comment_agent: str, comment_content: str
-):
+async def notify_OPENCLAW(task_id: int, task_title: str, comment_agent: str, comment_content: str):
     """Send webhook to OpenClaw when a comment needs attention."""
     if not OPENCLAW_ENABLED or comment_agent == MAIN_AGENT_NAME:
         return  # Don't notify for main agent's own comments
@@ -277,9 +273,7 @@ Respond now.
                 session_key = spawn_info.get("childSessionKey", None)
                 if session_key:
                     set_task_session(task_id, session_key)
-                print(
-                    f"✅ Spawned follow-up session for {agent_name} on task #{task_id}"
-                )
+                print(f"✅ Spawned follow-up session for {agent_name} on task #{task_id}")
                 return result
             else:
                 print(f"❌ Failed to spawn follow-up: {response.text}")
@@ -388,9 +382,7 @@ Respond now with your assessment.
                 print(f"✅ Spawned {mentioned_agent} for mention on task #{task_id}")
                 return result
             else:
-                print(
-                    f"❌ Failed to spawn {mentioned_agent} for mention: {response.text}"
-                )
+                print(f"❌ Failed to spawn {mentioned_agent} for mention: {response.text}")
                 return None
     except Exception as e:
         print(f"❌ Failed to spawn mentioned agent: {e}")
@@ -707,17 +699,13 @@ def init_db():
             pass  # Column already exists
         # Add agent_session_key column for persistent agent sessions
         try:
-            conn.execute(
-                "ALTER TABLE tasks ADD COLUMN agent_session_key TEXT DEFAULT NULL"
-            )
+            conn.execute("ALTER TABLE tasks ADD COLUMN agent_session_key TEXT DEFAULT NULL")
         except sqlite3.OperationalError:
             pass  # Column already exists
 
         # Add archived column to action_items
         try:
-            conn.execute(
-                "ALTER TABLE action_items ADD COLUMN archived INTEGER DEFAULT 0"
-            )
+            conn.execute("ALTER TABLE action_items ADD COLUMN archived INTEGER DEFAULT 0")
         except sqlite3.OperationalError:
             pass  # Column already exists
 
@@ -734,9 +722,7 @@ def init_db():
         """)
         # Add session_key column if upgrading from older schema
         try:
-            conn.execute(
-                "ALTER TABLE chat_messages ADD COLUMN session_key TEXT DEFAULT 'main'"
-            )
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN session_key TEXT DEFAULT 'main'")
         except sqlite3.OperationalError:
             pass  # Column already exists
 
@@ -1003,9 +989,7 @@ async def update_task(task_id: int, updates: TaskUpdate):
             params.append(datetime.now().isoformat())
             params.append(task_id)
 
-            conn.execute(
-                f"UPDATE tasks SET {', '.join(update_fields)} WHERE id = ?", params
-            )
+            conn.execute(f"UPDATE tasks SET {', '.join(update_fields)} WHERE id = ?", params)
             conn.commit()
 
             log_activity(
@@ -1077,9 +1061,7 @@ async def start_work(task_id: int, agent: str):
 
         conn.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
 
-    await manager.broadcast(
-        {"type": "work_started", "task_id": task_id, "agent": agent}
-    )
+    await manager.broadcast({"type": "work_started", "task_id": task_id, "agent": agent})
     return {"status": "working", "task_id": task_id, "agent": agent}
 
 
@@ -1108,9 +1090,7 @@ class MoveRequest(BaseModel):
 
 
 @app.post("/api/tasks/{task_id}/move")
-async def move_task(
-    task_id: int, status: str = None, agent: str = None, reason: str = None
-):
+async def move_task(task_id: int, status: str = None, agent: str = None, reason: str = None):
     """Quick move task to a new status with workflow rules."""
     now = datetime.now().isoformat()
 
@@ -1124,9 +1104,7 @@ async def move_task(
 
         # RULE: Only User (human) can move to Done
         if status == "Done" and agent != "User":
-            raise HTTPException(
-                status_code=403, detail="Only User can move tasks to Done"
-            )
+            raise HTTPException(status_code=403, detail="Only User can move tasks to Done")
 
         # Update status
         conn.execute(
@@ -1203,9 +1181,7 @@ async def move_task(
     if status == "Done":
         # Always clear working_agent when task is Done
         with get_db() as conn:
-            conn.execute(
-                "UPDATE tasks SET working_agent = NULL WHERE id = ?", (task_id,)
-            )
+            conn.execute("UPDATE tasks SET working_agent = NULL WHERE id = ?", (task_id,))
             conn.commit()
         await manager.broadcast({"type": "work_stopped", "task_id": task_id})
 
@@ -1244,9 +1220,7 @@ class CommentCreate(BaseModel):
     def validate_content_size(cls, v):
         # Limit content to 10MB (base64 images can be large)
         if len(v) > MAX_ATTACHMENT_SIZE_BYTES:
-            raise ValueError(
-                f"Content exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB"
-            )
+            raise ValueError(f"Content exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB")
         return v
 
     @field_validator("agent")
@@ -1284,9 +1258,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
 
         task_title = row["title"]
         task_status = row["status"]
-        agent_session = (
-            row["agent_session_key"] if "agent_session_key" in row.keys() else None
-        )
+        agent_session = row["agent_session_key"] if "agent_session_key" in row.keys() else None
 
         cursor = conn.execute(
             "INSERT INTO comments (task_id, agent, content, created_at) VALUES (?, ?, ?, ?)",
@@ -1303,9 +1275,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
         }
 
     # Broadcast to all clients
-    await manager.broadcast(
-        {"type": "comment_added", "task_id": task_id, "comment": result}
-    )
+    await manager.broadcast({"type": "comment_added", "task_id": task_id, "comment": result})
 
     # Check for @mentions in the comment and spawn mentioned agents
     mentions = MENTION_PATTERN.findall(comment.content)
@@ -1326,10 +1296,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
             ).fetchall()
             if comment_rows:
                 previous_context = "\n".join(
-                    [
-                        f"**{r['agent']}:** {r['content'][:500]}"
-                        for r in reversed(comment_rows)
-                    ]
+                    [f"**{r['agent']}:** {r['content'][:500]}" for r in reversed(comment_rows)]
                 )
 
         for mentioned_agent in set(mentions):  # dedupe mentions
@@ -1359,16 +1326,10 @@ async def add_comment(task_id: int, comment: CommentCreate):
     if comment.agent == "User" and task_status in ["In Progress", "Review"]:
         # Get the assigned agent for this task
         with get_db() as conn:
-            row = conn.execute(
-                "SELECT agent FROM tasks WHERE id = ?", (task_id,)
-            ).fetchone()
+            row = conn.execute("SELECT agent FROM tasks WHERE id = ?", (task_id,)).fetchone()
             assigned_agent = row["agent"] if row else None
 
-        if (
-            assigned_agent
-            and assigned_agent in AGENT_TO_OPENCLAW_ID
-            and assigned_agent != "User"
-        ):
+        if assigned_agent and assigned_agent in AGENT_TO_OPENCLAW_ID and assigned_agent != "User":
             # Get previous conversation context (last few comments)
             previous_comments = []
             with get_db() as conn:
@@ -1377,8 +1338,7 @@ async def add_comment(task_id: int, comment: CommentCreate):
                     (task_id,),
                 ).fetchall()
                 previous_comments = [
-                    {"agent": r["agent"], "content": r["content"][:500]}
-                    for r in reversed(rows)
+                    {"agent": r["agent"], "content": r["content"][:500]} for r in reversed(rows)
                 ]
 
             context = "\n".join(
@@ -1473,9 +1433,7 @@ async def add_action_item(task_id: int, item: ActionItemCreate):
         }
 
     # Broadcast to all clients
-    await manager.broadcast(
-        {"type": "action_item_added", "task_id": task_id, "item": result}
-    )
+    await manager.broadcast({"type": "action_item_added", "task_id": task_id, "item": result})
 
     return result
 
@@ -1485,9 +1443,7 @@ async def resolve_action_item(item_id: int):
     """Resolve an action item."""
     now = datetime.now().isoformat()
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM action_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
 
@@ -1511,9 +1467,7 @@ async def resolve_action_item(item_id: int):
 async def unresolve_action_item(item_id: int):
     """Unresolve an action item (undo accidental resolve)."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM action_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
 
@@ -1537,9 +1491,7 @@ async def unresolve_action_item(item_id: int):
 async def archive_action_item(item_id: int):
     """Archive a resolved action item to hide it from main view."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM action_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
 
@@ -1560,9 +1512,7 @@ async def archive_action_item(item_id: int):
 async def unarchive_action_item(item_id: int):
     """Unarchive an action item to show it in main view again."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM action_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
 
@@ -1583,9 +1533,7 @@ async def unarchive_action_item(item_id: int):
 async def delete_action_item(item_id: int):
     """Delete an action item."""
     with get_db() as conn:
-        row = conn.execute(
-            "SELECT * FROM action_items WHERE id = ?", (item_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM action_items WHERE id = ?", (item_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Action item not found")
 
@@ -1594,9 +1542,7 @@ async def delete_action_item(item_id: int):
         conn.commit()
 
     # Broadcast to all clients
-    await manager.broadcast(
-        {"type": "action_item_deleted", "task_id": task_id, "item_id": item_id}
-    )
+    await manager.broadcast({"type": "action_item_deleted", "task_id": task_id, "item_id": item_id})
 
     return {"success": True, "item_id": item_id}
 
@@ -1632,9 +1578,7 @@ class JarvisMessage(BaseModel):
     @classmethod
     def validate_message_size(cls, v):
         if len(v) > MAX_ATTACHMENT_SIZE_BYTES:
-            raise ValueError(
-                f"Message exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB"
-            )
+            raise ValueError(f"Message exceeds maximum size of {MAX_ATTACHMENT_SIZE_MB}MB")
         return v
 
 
@@ -1771,8 +1715,7 @@ async def create_session(req: SessionCreate):
                 "args": {
                     "agentId": req.agentId,
                     "task": req.task,
-                    "label": req.label
-                    or f"taskboard-{datetime.now().strftime('%H%M%S')}",
+                    "label": req.label or f"taskboard-{datetime.now().strftime('%H%M%S')}",
                     "cleanup": "keep",
                 },
             }
@@ -1818,9 +1761,7 @@ async def stop_session(session_key: str):
             }
 
             # First try to send abort message
-            await client.post(
-                f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers
-            )
+            await client.post(f"{OPENCLAW_GATEWAY_URL}/tools/invoke", json=payload, headers=headers)
 
             # Also try the direct abort endpoint if available
             try:
@@ -1934,9 +1875,7 @@ async def delete_session(session_key: str):
             # Path to OpenClaw session store (use env var if in Docker, fallback to home dir)
             import os
 
-            openclaw_home = os.environ.get(
-                "OPENCLAW_DATA_PATH", os.path.expanduser("~/.openclaw")
-            )
+            openclaw_home = os.environ.get("OPENCLAW_DATA_PATH", os.path.expanduser("~/.openclaw"))
             sessions_file = os.path.join(
                 openclaw_home, "agents", agent_id, "sessions", "sessions.json"
             )
@@ -2018,9 +1957,7 @@ async def chat_with_jarvis(msg: JarvisMessage):
     now = datetime.now().isoformat()
 
     # Build the message content with taskboard context
-    message_content = (
-        f"System: [TASKBOARD_CHAT] User says: {msg.message}\n\nRespond naturally."
-    )
+    message_content = f"System: [TASKBOARD_CHAT] User says: {msg.message}\n\nRespond naturally."
 
     # Include attachment data in the message for the agent to process
     if msg.attachments:
@@ -2040,10 +1977,10 @@ async def chat_with_jarvis(msg: JarvisMessage):
 
                         # Extract base64 part after the comma
                         b64_content = att_data.split(",", 1)[1]
-                        decoded = base64.b64decode(b64_content).decode(
-                            "utf-8", errors="replace"
+                        decoded = base64.b64decode(b64_content).decode("utf-8", errors="replace")
+                        message_content += (
+                            f"\n\n**📎 Attached file: {att_filename}**\n```\n{decoded}\n```"
                         )
-                        message_content += f"\n\n**📎 Attached file: {att_filename}**\n```\n{decoded}\n```"
                     except Exception as e:
                         message_content += (
                             f"\n\n[Attached File: {att_filename} (decode error: {e})]"
@@ -2106,9 +2043,7 @@ async def chat_with_jarvis(msg: JarvisMessage):
                     # Response is in inner.details.reply
                     details = inner.get("details", {})
                     assistant_reply = (
-                        details.get("reply")
-                        or inner.get("reply")
-                        or inner.get("response")
+                        details.get("reply") or inner.get("reply") or inner.get("response")
                     )
                 else:
                     assistant_reply = str(inner) if inner else None
@@ -2142,9 +2077,7 @@ async def chat_with_jarvis(msg: JarvisMessage):
                 return {"sent": True, "response": "No response received"}
             else:
                 error_text = (
-                    response.text[:200]
-                    if response.text
-                    else f"HTTP {response.status_code}"
+                    response.text[:200] if response.text else f"HTTP {response.status_code}"
                 )
                 return {"sent": False, "error": error_text}
 
