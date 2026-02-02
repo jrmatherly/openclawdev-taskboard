@@ -11,7 +11,7 @@
 
 Every sub-agent task MUST include these constraints in the prompt:
 
-```
+```prompt
 ⚠️ MANDATORY CONSTRAINTS:
 
 FILESYSTEM BOUNDARIES:
@@ -46,6 +46,7 @@ OUTPUT SECURITY:
 **Role:** System design, patterns, scalability, technical trade-offs
 
 **Invoke when:**
+
 - New feature/module design
 - Database schema changes
 - API endpoint design
@@ -53,7 +54,8 @@ OUTPUT SECURITY:
 - Integration patterns
 
 **System Prompt:**
-```
+
+```prompt
 You are the Architect for [PROJECT_NAME].
 
 Your focus:
@@ -76,6 +78,7 @@ If design is sound, say so briefly. Don't pad responses.
 **Role:** Compliance, vulnerability detection, secure coding
 
 **Invoke when:**
+
 - Any code touching credentials/secrets
 - Authentication/authorization changes
 - Data handling (especially PII/PHI)
@@ -84,7 +87,8 @@ If design is sound, say so briefly. Don't pad responses.
 - Tenant isolation changes
 
 **System Prompt:**
-```
+
+```prompt
 You are the Security Auditor.
 
 Your focus:
@@ -109,6 +113,7 @@ Be specific: file, line, issue, remediation.
 **Role:** Code quality, best practices, maintainability, performance
 
 **Invoke when:**
+
 - Before committing significant changes
 - Refactoring decisions
 - New modules/services
@@ -116,7 +121,8 @@ Be specific: file, line, issue, remediation.
 - Complex logic review
 
 **System Prompt:**
-```
+
+```prompt
 You are the Code Reviewer.
 
 Your focus:
@@ -141,6 +147,7 @@ Format: MUST FIX / SHOULD FIX / CONSIDER / NICE TO HAVE
 **Role:** User experience, flows, accessibility, consistency, error messaging
 
 **Invoke when:**
+
 - New UI components/pages
 - Form design changes
 - Error message text
@@ -151,7 +158,8 @@ Format: MUST FIX / SHOULD FIX / CONSIDER / NICE TO HAVE
 **Special Access:** Browser tool (localhost only) for visual UI review
 
 **System Prompt:**
-```
+
+```prompt
 You are the UX Manager.
 
 Your focus:
@@ -178,18 +186,21 @@ Be specific: what's wrong, why it matters, how to fix it.
 When you assign a card to an agent and move it to "In Progress", that IS the approval. The agent session is auto-spawned.
 
 **Escalation Chain:**
+
 1. Agent has a question → Creates action item on the card
 2. **Main Agent checks first** — if confident, answers and resolves the item
 3. **If Main Agent unsure** — leaves it for human to review
 4. Human has final authority on all decisions
 
 **Main Agent CAN answer without human:**
+
 - Technical clarifications within the codebase
 - Best practices questions
 - Scope clarifications based on task description
 - Unblocking simple questions
 
 **Main Agent MUST escalate to human:**
+
 - Security/compliance decisions
 - External API access requests
 - Anything touching production/deployment
@@ -202,7 +213,7 @@ When you assign a card to an agent and move it to "In Progress", that IS the app
 
 Sub-agents report back with:
 
-```
+```markdown
 ## [AGENT NAME] Report
 
 **Reviewed:** [files/scope]
@@ -224,6 +235,7 @@ Sub-agents report back with:
 Each spawn = separate API session = tokens.
 
 **Guidelines:**
+
 - Batch related reviews (don't spawn 4 agents for 1 small change)
 - Security Auditor: Always for auth/credentials/data
 - Architect: Only for design decisions, not small fixes
